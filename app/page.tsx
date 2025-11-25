@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import Mascot from "@/components/Mascot";
+import Mascot, { MascotMood } from "@/components/Mascot";
 import { useVoice } from "@/lib/useVoice";
 
 interface Message {
@@ -11,12 +11,25 @@ interface Message {
   isUser: boolean;
 }
 
+// Parse action from response like "[ACTION:jump] Hello!"
+function parseAction(response: string): { action: MascotMood | null; text: string } {
+  const actionMatch = response.match(/^\[ACTION:([a-z-]+)\]\s*/i);
+  if (actionMatch) {
+    const action = actionMatch[1].toLowerCase() as MascotMood;
+    const text = response.replace(actionMatch[0], "");
+    return { action, text };
+  }
+  return { action: null, text: response };
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [mascotMood, setMascotMood] = useState<"happy" | "thinking" | "speaking" | "listening" | "celebrating">("happy");
+  const [mascotMood, setMascotMood] = useState<MascotMood>("happy");
   const [textInput, setTextInput] = useState("");
   const [hasStarted, setHasStarted] = useState(false);
+  const [currentAction, setCurrentAction] = useState<MascotMood | null>(null);
+  const actionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const {
     speak,
@@ -34,7 +47,10 @@ export default function Home() {
 
   // Update mascot mood based on state
   useEffect(() => {
-    if (isListening) {
+    // If there's an active action animation, prioritize it
+    if (currentAction) {
+      setMascotMood(currentAction);
+    } else if (isListening) {
       setMascotMood("listening");
     } else if (isSpeaking) {
       setMascotMood("speaking");
@@ -43,7 +59,16 @@ export default function Home() {
     } else {
       setMascotMood("happy");
     }
-  }, [isListening, isSpeaking, isLoading]);
+  }, [isListening, isSpeaking, isLoading, currentAction]);
+
+  // Cleanup action timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (actionTimeoutRef.current) {
+        clearTimeout(actionTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Send message
   const sendMessage = useCallback(async (text: string) => {
@@ -75,7 +100,10 @@ export default function Home() {
       });
 
       const data = await response.json();
-      const botResponse = data.response || "Sorry, I did not understand. Can you try again?";
+      const rawResponse = data.response || "Sorry, I did not understand. Can you try again?";
+
+      // Parse action from response
+      const { action, text: botResponse } = parseAction(rawResponse);
 
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -85,14 +113,55 @@ export default function Home() {
 
       setMessages((prev) => [...prev, botMessage]);
 
-      if (
+      // Handle action animation
+      if (action) {
+        // Clear any existing action timeout
+        if (actionTimeoutRef.current) {
+          clearTimeout(actionTimeoutRef.current);
+        }
+
+        setCurrentAction(action);
+
+        // Duration varies by action type
+        const actionDurations: Record<string, number> = {
+          "jump": 2000,
+          "spin": 3000,
+          "dance": 4000,
+          "fly": 4000,
+          "run": 3000,
+          "sleep": 4000,
+          "laugh": 3000,
+          "cry": 3000,
+          "yawn": 3000,
+          "eat": 3000,
+          "hug": 3000,
+          "wave": 3000,
+          "clap": 3000,
+          "high-five": 2000,
+          "nod": 2000,
+          "shake-head": 2000,
+          "wink": 2000,
+          "bow": 2000,
+          "stretch": 2000,
+          "sit": 3000,
+          "celebrating": 3000,
+        };
+
+        const duration = actionDurations[action] || 3000;
+
+        actionTimeoutRef.current = setTimeout(() => {
+          setCurrentAction(null);
+        }, duration);
+      } else if (
         botResponse.toLowerCase().includes("excellent") ||
         botResponse.toLowerCase().includes("great job") ||
         botResponse.toLowerCase().includes("superstar") ||
         botResponse.toLowerCase().includes("amazing")
       ) {
-        setMascotMood("celebrating");
-        setTimeout(() => setMascotMood("speaking"), 1000);
+        setCurrentAction("celebrating");
+        actionTimeoutRef.current = setTimeout(() => {
+          setCurrentAction(null);
+        }, 2000);
       }
 
       speak(botResponse);
@@ -265,6 +334,28 @@ export default function Home() {
               className="px-3 py-1.5 bg-white rounded-full text-sm font-medium text-gray-600 shadow hover:shadow-md hover:bg-gray-50 transition-all disabled:opacity-50"
             >
               {phrase}
+            </button>
+          ))}
+        </div>
+
+        {/* Action Commands */}
+        <div className="mt-3 flex flex-wrap justify-center gap-2 max-w-lg">
+          <p className="w-full text-center text-xs text-gray-400 mb-1">Try these actions:</p>
+          {[
+            { cmd: "Jump!", color: "bg-yellow-100 text-yellow-700" },
+            { cmd: "Dance!", color: "bg-pink-100 text-pink-700" },
+            { cmd: "Wave!", color: "bg-blue-100 text-blue-700" },
+            { cmd: "Spin!", color: "bg-purple-100 text-purple-700" },
+            { cmd: "High five!", color: "bg-green-100 text-green-700" },
+            { cmd: "Sleep!", color: "bg-indigo-100 text-indigo-700" },
+          ].map(({ cmd, color }) => (
+            <button
+              key={cmd}
+              onClick={() => sendMessage(cmd)}
+              disabled={isLoading || isListening}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium shadow hover:shadow-md transition-all disabled:opacity-50 ${color}`}
+            >
+              {cmd}
             </button>
           ))}
         </div>

@@ -150,3 +150,217 @@ body {
 .loading-dots span:nth-child(1) { animation-delay: -0.32s; }
 .loading-dots span:nth-child(2) { animation-delay: -0.16s; }
 .loading-dots span:nth-child(3) { animation-delay: 0s; }
+
+/* Kai Mascot Animations */
+@keyframes jump {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  30% { transform: translateY(-50px) scaleY(1.1); }
+  50% { transform: translateY(-60px) scaleY(1.1); }
+  70% { transform: translateY(-30px) scaleY(1); }
+  85% { transform: translateY(5px) scaleY(0.9); }
+}
+
+@keyframes dance {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  25% { transform: translateX(-15px) rotate(-10deg); }
+  50% { transform: translateX(0) rotate(0deg) translateY(-10px); }
+  75% { transform: translateX(15px) rotate(10deg); }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes wave {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(20deg); }
+  75% { transform: rotate(-20deg); }
+}
+
+@keyframes fly {
+  0%, 100% { transform: translateY(0) translateX(0); }
+  25% { transform: translateY(-30px) translateX(20px); }
+  50% { transform: translateY(-50px) translateX(0); }
+  75% { transform: translateY(-30px) translateX(-20px); }
+}
+
+@keyframes run {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-10px) translateY(-5px); }
+  50% { transform: translateX(0); }
+  75% { transform: translateX(10px) translateY(-5px); }
+}
+
+@keyframes stretch {
+  0%, 100% { transform: scaleY(1) scaleX(1); }
+  50% { transform: scaleY(1.2) scaleX(0.9); }
+}
+
+@keyframes bow {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  50% { transform: rotate(15deg) translateY(10px); }
+}
+
+@keyframes nod {
+  0%, 100% { transform: translateY(0); }
+  25% { transform: translateY(10px); }
+  50% { transform: translateY(0); }
+  75% { transform: translateY(10px); }
+}
+
+@keyframes shake-head {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-10px); }
+  50% { transform: translateX(0); }
+  75% { transform: translateX(10px); }
+}
+
+@keyframes clap {
+  0%, 100% { transform: scaleX(1); }
+  50% { transform: scaleX(0.8); }
+}
+
+@keyframes high-five {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-20px) scale(1.1); }
+}
+
+@keyframes hug {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+
+@keyframes eat {
+  0%, 100% { transform: scaleY(1); }
+  25% { transform: scaleY(0.95); }
+  50% { transform: scaleY(1); }
+  75% { transform: scaleY(0.95); }
+}
+
+@keyframes sleep-breathe {
+  0%, 100% { transform: scaleY(1) scaleX(1); }
+  50% { transform: scaleY(1.03) scaleX(1.01); }
+}
+
+@keyframes laugh {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-5px) rotate(-2deg); }
+  50% { transform: translateY(0) rotate(0deg); }
+  75% { transform: translateY(-5px) rotate(2deg); }
+}
+
+@keyframes cry-shake {
+  0%, 100% { transform: translateY(0); }
+  25% { transform: translateY(2px) rotate(-1deg); }
+  75% { transform: translateY(2px) rotate(1deg); }
+}
+
+@keyframes yawn {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.05); }
+}
+
+@keyframes wink-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes zzz-float {
+  0% { opacity: 0; transform: translateY(0) translateX(0); }
+  50% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-30px) translateX(20px); }
+}
+
+@keyframes tear-drop {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(30px); opacity: 0; }
+}
+
+.animate-jump {
+  animation: jump 0.8s ease-in-out;
+}
+
+.animate-dance {
+  animation: dance 0.6s ease-in-out infinite;
+}
+
+.animate-spin {
+  animation: spin 1s linear;
+}
+
+.animate-spin-infinite {
+  animation: spin 1s linear infinite;
+}
+
+.animate-wave {
+  animation: wave 0.5s ease-in-out infinite;
+}
+
+.animate-fly {
+  animation: fly 2s ease-in-out infinite;
+}
+
+.animate-run {
+  animation: run 0.3s ease-in-out infinite;
+}
+
+.animate-stretch {
+  animation: stretch 1.5s ease-in-out;
+}
+
+.animate-bow {
+  animation: bow 1s ease-in-out;
+}
+
+.animate-nod {
+  animation: nod 0.5s ease-in-out 3;
+}
+
+.animate-shake-head {
+  animation: shake-head 0.4s ease-in-out 3;
+}
+
+.animate-clap {
+  animation: clap 0.3s ease-in-out infinite;
+}
+
+.animate-high-five {
+  animation: high-five 0.6s ease-in-out;
+}
+
+.animate-hug {
+  animation: hug 1s ease-in-out infinite;
+}
+
+.animate-eat {
+  animation: eat 0.4s ease-in-out infinite;
+}
+
+.animate-sleep {
+  animation: sleep-breathe 3s ease-in-out infinite;
+}
+
+.animate-laugh {
+  animation: laugh 0.2s ease-in-out infinite;
+}
+
+.animate-cry {
+  animation: cry-shake 0.3s ease-in-out infinite;
+}
+
+.animate-yawn {
+  animation: yawn 2s ease-in-out;
+}
+
+.animate-wink {
+  animation: wink-bounce 0.5s ease-in-out;
+}
+
+.animate-zzz {
+  animation: zzz-float 2s ease-in-out infinite;
+}
+
+.animate-tear {
+  animation: tear-drop 1s ease-in-out infinite;
+}
