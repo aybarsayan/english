@@ -31,16 +31,6 @@ interface UseRealtimeVoiceReturn {
   clearError: () => void;
 }
 
-// Parse action from AI response like "[ACTION:jump] Hello!"
-function parseAction(text: string): { action: ActionType; cleanText: string } {
-  const match = text.match(/^\[ACTION:([a-z-]+)\]\s*/i);
-  if (match) {
-    const action = match[1].toLowerCase() as ActionType;
-    const cleanText = text.replace(match[0], "");
-    return { action, cleanText };
-  }
-  return { action: null, cleanText: text };
-}
 
 type RealtimeEvent = {
   type: string;
@@ -130,38 +120,66 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
       case "response.audio_transcript.done":
         // AI's response transcript
         if (event.transcript) {
-          const { action, cleanText } = parseAction(event.transcript);
-
-          // Set action animation
-          if (action) {
-            if (actionTimeoutRef.current) {
-              clearTimeout(actionTimeoutRef.current);
-            }
-            setCurrentAction(action);
-
-            // Clear action after animation duration
-            const durations: Record<string, number> = {
-              "jump": 2000, "spin": 3000, "dance": 4000, "fly": 4000,
-              "wave": 3000, "clap": 3000, "bow": 2000, "nod": 2000,
-              "shake-head": 2000, "laugh": 3000, "wink": 2000,
-              "high-five": 2000, "hug": 3000, "celebrating": 3000,
-              "sleep": 4000, "cry": 3000, "yawn": 3000,
-            };
-            const duration = durations[action] || 3000;
-
-            actionTimeoutRef.current = setTimeout(() => {
-              setCurrentAction(null);
-            }, duration);
-          }
-
           setMessages((prev) => [
             ...prev,
             {
               id: event.item_id || Date.now().toString(),
-              text: cleanText,
+              text: event.transcript,
               isUser: false,
             },
           ]);
+        }
+        break;
+
+      case "response.output_item.done":
+        // Function call completed
+        if (event.item?.type === "function_call" && event.item?.name === "trigger_animation") {
+          try {
+            const args = JSON.parse(event.item.arguments || "{}");
+            const animation = args.animation as ActionType;
+
+            if (animation) {
+              console.log("[Realtime] Animation triggered:", animation);
+
+              if (actionTimeoutRef.current) {
+                clearTimeout(actionTimeoutRef.current);
+              }
+              setCurrentAction(animation);
+
+              // Clear action after animation duration
+              const durations: Record<string, number> = {
+                "jump": 2000, "spin": 3000, "dance": 4000, "fly": 4000,
+                "wave": 3000, "clap": 3000, "bow": 2000, "nod": 2000,
+                "shake-head": 2000, "laugh": 3000, "wink": 2000,
+                "high-five": 2000, "hug": 3000, "celebrating": 3000,
+              };
+              const duration = durations[animation] || 3000;
+
+              actionTimeoutRef.current = setTimeout(() => {
+                setCurrentAction(null);
+              }, duration);
+
+              // Send function result back and continue response
+              if (dataChannelRef.current?.readyState === "open") {
+                // 1. Acknowledge the function call
+                dataChannelRef.current.send(JSON.stringify({
+                  type: "conversation.item.create",
+                  item: {
+                    type: "function_call_output",
+                    call_id: event.item.call_id,
+                    output: JSON.stringify({ success: true, animation })
+                  }
+                }));
+
+                // 2. Tell AI to continue speaking
+                dataChannelRef.current.send(JSON.stringify({
+                  type: "response.create"
+                }));
+              }
+            }
+          } catch (err) {
+            console.error("[Realtime] Failed to parse function call:", err);
+          }
         }
         break;
 

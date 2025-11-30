@@ -288,23 +288,27 @@ export default function Mascot({ mood = "happy", size = "medium", onClick }: Mas
   };
 
   const getWings = () => {
-    const baseWingClass = mood === "celebrating" || mood === "clap" || mood === "hug" || mood === "high-five"
-      ? "origin-right animate-wiggle"
-      : "";
-    const baseWingClass2 = mood === "celebrating" || mood === "clap" || mood === "hug" || mood === "high-five"
-      ? "origin-left animate-wiggle"
-      : "";
-
+    // Wave - sağ kanat sallanıyor
     if (mood === "wave") {
       return (
         <>
           <ellipse cx="25" cy="120" rx="15" ry="30" fill="url(#bodyGradient)" />
-          <ellipse cx="175" cy="120" rx="15" ry="30" fill="url(#bodyGradient)"
-            className="origin-bottom animate-wave" />
+          <g>
+            <ellipse cx="175" cy="120" rx="15" ry="30" fill="url(#bodyGradient)">
+              <animateTransform
+                attributeName="transform"
+                type="rotate"
+                values="0 175 150; 30 175 150; -10 175 150; 20 175 150; 0 175 150"
+                dur="0.6s"
+                repeatCount="indefinite"
+              />
+            </ellipse>
+          </g>
         </>
       );
     }
 
+    // Hug - iki kanat öne dönük
     if (mood === "hug") {
       return (
         <>
@@ -314,6 +318,7 @@ export default function Mascot({ mood = "happy", size = "medium", onClick }: Mas
       );
     }
 
+    // High-five - sağ kanat yukarı
     if (mood === "high-five") {
       return (
         <>
@@ -323,23 +328,77 @@ export default function Mascot({ mood = "happy", size = "medium", onClick }: Mas
       );
     }
 
-    if (mood === "fly") {
+    // Clap - iki kanat birbirine vuruyor
+    if (mood === "clap") {
       return (
         <>
-          <ellipse cx="20" cy="100" rx="20" ry="35" fill="url(#bodyGradient)" className="origin-right">
-            <animate attributeName="ry" values="35;25;35" dur="0.3s" repeatCount="indefinite" />
+          <ellipse cx="25" cy="120" rx="15" ry="30" fill="url(#bodyGradient)">
+            <animateTransform
+              attributeName="transform"
+              type="rotate"
+              values="0 40 120; 40 40 120; 0 40 120"
+              dur="0.3s"
+              repeatCount="indefinite"
+            />
           </ellipse>
-          <ellipse cx="180" cy="100" rx="20" ry="35" fill="url(#bodyGradient)" className="origin-left">
-            <animate attributeName="ry" values="35;25;35" dur="0.3s" repeatCount="indefinite" />
+          <ellipse cx="175" cy="120" rx="15" ry="30" fill="url(#bodyGradient)">
+            <animateTransform
+              attributeName="transform"
+              type="rotate"
+              values="0 160 120; -40 160 120; 0 160 120"
+              dur="0.3s"
+              repeatCount="indefinite"
+            />
           </ellipse>
         </>
       );
     }
 
+    // Celebrating - iki kanat yukarı aşağı
+    if (mood === "celebrating") {
+      return (
+        <>
+          <ellipse cx="25" cy="120" rx="15" ry="30" fill="url(#bodyGradient)">
+            <animateTransform
+              attributeName="transform"
+              type="rotate"
+              values="0 40 120; -30 40 120; 0 40 120"
+              dur="0.4s"
+              repeatCount="indefinite"
+            />
+          </ellipse>
+          <ellipse cx="175" cy="120" rx="15" ry="30" fill="url(#bodyGradient)">
+            <animateTransform
+              attributeName="transform"
+              type="rotate"
+              values="0 160 120; 30 160 120; 0 160 120"
+              dur="0.4s"
+              repeatCount="indefinite"
+            />
+          </ellipse>
+        </>
+      );
+    }
+
+    // Fly - kanatlar çırpıyor
+    if (mood === "fly") {
+      return (
+        <>
+          <ellipse cx="20" cy="100" rx="20" ry="35" fill="url(#bodyGradient)">
+            <animate attributeName="ry" values="35;25;35" dur="0.2s" repeatCount="indefinite" />
+          </ellipse>
+          <ellipse cx="180" cy="100" rx="20" ry="35" fill="url(#bodyGradient)">
+            <animate attributeName="ry" values="35;25;35" dur="0.2s" repeatCount="indefinite" />
+          </ellipse>
+        </>
+      );
+    }
+
+    // Default - statik kanatlar
     return (
       <>
-        <ellipse cx="25" cy="120" rx="15" ry="30" fill="url(#bodyGradient)" className={baseWingClass} />
-        <ellipse cx="175" cy="120" rx="15" ry="30" fill="url(#bodyGradient)" className={baseWingClass2} />
+        <ellipse cx="25" cy="120" rx="15" ry="30" fill="url(#bodyGradient)" />
+        <ellipse cx="175" cy="120" rx="15" ry="30" fill="url(#bodyGradient)" />
       </>
     );
   };
