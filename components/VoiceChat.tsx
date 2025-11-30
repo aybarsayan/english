@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Mascot from "./Mascot";
 import { useVoice } from "@/lib/useVoice";
 
@@ -14,8 +14,9 @@ export default function VoiceChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [mascotMood, setMascotMood] = useState<"happy" | "thinking" | "speaking" | "listening" | "celebrating">("happy");
-  const [showWelcome, setShowWelcome] = useState(true);
   const [textInput, setTextInput] = useState("");
+  const hasPlayedWelcome = useRef(false);
+  const lastTranscriptRef = useRef("");
 
   const {
     speak,
@@ -24,6 +25,7 @@ export default function VoiceChat() {
     startListening,
     stopListening,
     isListening,
+    isProcessing,
     transcript,
     resetTranscript,
     isSupported,
@@ -35,36 +37,28 @@ export default function VoiceChat() {
   useEffect(() => {
     if (isListening) {
       setMascotMood("listening");
+    } else if (isProcessing || isLoading) {
+      setMascotMood("thinking");
     } else if (isSpeaking) {
       setMascotMood("speaking");
-    } else if (isLoading) {
-      setMascotMood("thinking");
     } else {
       setMascotMood("happy");
     }
-  }, [isListening, isSpeaking, isLoading]);
+  }, [isListening, isProcessing, isSpeaking, isLoading]);
 
-  // Welcome message
+  // Show welcome message on mount
   useEffect(() => {
-    if (showWelcome) {
-      const welcomeMessage = "Hello friend! I am Kai! Tap the microphone and talk to me in English!";
-      setTimeout(() => {
-        speak(welcomeMessage);
-        setMessages([
-          {
-            id: "welcome",
-            text: welcomeMessage,
-            isUser: false,
-          },
-        ]);
-        setShowWelcome(false);
-      }, 500);
-    }
-  }, [showWelcome, speak]);
+    const welcomeMessage = "Hello friend! I am Kai! Tap the microphone and talk to me in English!";
+    setMessages([{
+      id: "welcome",
+      text: welcomeMessage,
+      isUser: false,
+    }]);
+  }, []);
 
-  // Send message when transcript is final
+  // Send message to chat API
   const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim()) return;
+    if (!text.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -101,51 +95,58 @@ export default function VoiceChat() {
 
       setMessages((prev) => [...prev, botMessage]);
 
-      // Check for celebration triggers
-      if (
-        botResponse.toLowerCase().includes("excellent") ||
-        botResponse.toLowerCase().includes("great job") ||
-        botResponse.toLowerCase().includes("superstar") ||
-        botResponse.toLowerCase().includes("amazing")
-      ) {
+      // Check for celebration
+      const lower = botResponse.toLowerCase();
+      if (lower.includes("excellent") || lower.includes("great job") || lower.includes("amazing")) {
         setMascotMood("celebrating");
         setTimeout(() => setMascotMood("speaking"), 1000);
       }
 
-      // Speak the response
-      speak(botResponse);
-    } catch {
-      const errorMessage = "Oops! Something went wrong. Please try again!";
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          text: errorMessage,
-          isUser: false,
-        },
-      ]);
-      speak(errorMessage);
+      // Speak response
+      await speak(botResponse);
+
+    } catch (err) {
+      console.error("Chat error:", err);
+      const errorMsg = "Oops! Something went wrong. Please try again!";
+      setMessages((prev) => [...prev, {
+        id: (Date.now() + 1).toString(),
+        text: errorMsg,
+        isUser: false,
+      }]);
+      speak(errorMsg);
     } finally {
       setIsLoading(false);
     }
-  }, [messages, resetTranscript, speak]);
+  }, [messages, resetTranscript, speak, isLoading]);
 
-  // Handle voice input completion
+  // Handle transcript changes - send when we get a new transcript
   useEffect(() => {
-    if (!isListening && transcript) {
+    if (transcript && transcript !== lastTranscriptRef.current && !isProcessing && !isListening) {
+      lastTranscriptRef.current = transcript;
       sendMessage(transcript);
     }
-  }, [isListening, transcript, sendMessage]);
+  }, [transcript, isProcessing, isListening, sendMessage]);
 
   const handleMicClick = () => {
+    // Play welcome audio on first interaction
+    if (!hasPlayedWelcome.current && messages.length > 0) {
+      hasPlayedWelcome.current = true;
+      const welcomeMsg = messages.find(m => m.id === "welcome");
+      if (welcomeMsg && !isSpeaking) {
+        speak(welcomeMsg.text);
+        return; // Don't start listening immediately, let welcome play
+      }
+    }
+
     clearError();
+
     if (isSpeaking) {
       stopSpeaking();
     }
 
     if (isListening) {
       stopListening();
-    } else {
+    } else if (!isProcessing && !isLoading) {
       startListening();
     }
   };
@@ -163,8 +164,14 @@ export default function VoiceChat() {
 
   const handleTextSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (textInput.trim()) {
+    if (textInput.trim() && !isLoading) {
       sendMessage(textInput);
+    }
+  };
+
+  const handleQuickPhrase = (phrase: string) => {
+    if (!isLoading && !isListening) {
+      sendMessage(phrase);
     }
   };
 
@@ -181,6 +188,8 @@ export default function VoiceChat() {
       </div>
     );
   }
+
+  const isWorking = isListening || isProcessing || isLoading;
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] p-4">
@@ -204,7 +213,6 @@ export default function VoiceChat() {
 
       {/* Speech Bubble */}
       <div className="bg-white rounded-3xl p-6 shadow-xl max-w-md w-full mb-6 relative">
-        {/* Speech bubble pointer */}
         <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-b-8 border-transparent border-b-white"></div>
 
         <div className="max-h-48 overflow-y-auto space-y-3">
@@ -231,10 +239,12 @@ export default function VoiceChat() {
             </div>
           )}
 
-          {isListening && (
+          {(isListening || isProcessing) && (
             <div className="bg-green-100 text-green-800 p-3 rounded-2xl">
-              <p className="text-sm font-medium">Listening...</p>
-              <p>{transcript || "Say something in English!"}</p>
+              <p className="text-sm font-medium">
+                {isListening ? "Listening..." : "Processing..."}
+              </p>
+              {isListening && <p>{transcript || "Say something in English!"}</p>}
             </div>
           )}
         </div>
@@ -243,12 +253,12 @@ export default function VoiceChat() {
       {/* Microphone Button */}
       <button
         onClick={handleMicClick}
-        disabled={isLoading}
+        disabled={isLoading || isProcessing}
         className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg transform transition-all duration-200 ${
           isListening
             ? "bg-red-500 hover:bg-red-600 scale-110 animate-pulse"
             : "bg-gradient-to-r from-green-400 to-emerald-500 hover:from-green-500 hover:to-emerald-600 hover:scale-105"
-        } ${isLoading ? "opacity-50 cursor-not-allowed" : ""}`}
+        } ${isLoading || isProcessing ? "opacity-50 cursor-not-allowed" : ""}`}
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           {isListening ? (
@@ -259,10 +269,10 @@ export default function VoiceChat() {
         </svg>
       </button>
       <p className="text-center mt-3 text-gray-600 font-medium">
-        {isListening ? "Tap to stop" : "Tap to talk"}
+        {isListening ? "Tap to stop" : isProcessing ? "Processing..." : "Tap to talk"}
       </p>
 
-      {/* Text Input Fallback */}
+      {/* Text Input */}
       <form onSubmit={handleTextSubmit} className="mt-6 w-full max-w-md">
         <div className="flex gap-2">
           <input
@@ -271,11 +281,11 @@ export default function VoiceChat() {
             onChange={(e) => setTextInput(e.target.value)}
             placeholder="Or type here..."
             className="flex-1 px-4 py-3 rounded-full border-2 border-purple-200 focus:border-purple-400 focus:outline-none text-gray-700"
-            disabled={isLoading || isListening}
+            disabled={isWorking}
           />
           <button
             type="submit"
-            disabled={isLoading || isListening || !textInput.trim()}
+            disabled={isWorking || !textInput.trim()}
             className="px-6 py-3 bg-gradient-to-r from-purple-500 to-violet-500 text-white font-bold rounded-full hover:shadow-lg transition-all disabled:opacity-50"
           >
             Send
@@ -289,18 +299,16 @@ export default function VoiceChat() {
           Or tap a phrase to practice:
         </p>
         <div className="flex flex-wrap justify-center gap-2">
-          {["Hello!", "How are you?", "What is your name?", "I like cats!", "Thank you!"].map(
-            (phrase) => (
-              <button
-                key={phrase}
-                onClick={() => sendMessage(phrase)}
-                disabled={isLoading || isListening}
-                className="px-4 py-2 bg-white rounded-full text-sm font-medium text-gray-700 shadow hover:shadow-md hover:bg-gray-50 transition-all disabled:opacity-50"
-              >
-                {phrase}
-              </button>
-            )
-          )}
+          {["Hello!", "How are you?", "What is your name?", "I like cats!", "Thank you!"].map((phrase) => (
+            <button
+              key={phrase}
+              onClick={() => handleQuickPhrase(phrase)}
+              disabled={isWorking}
+              className="px-4 py-2 bg-white rounded-full text-sm font-medium text-gray-700 shadow hover:shadow-md hover:bg-gray-50 transition-all disabled:opacity-50"
+            >
+              {phrase}
+            </button>
+          ))}
         </div>
       </div>
 
