@@ -8,6 +8,11 @@ interface Message {
   isUser: boolean;
 }
 
+type ActionType =
+  | "jump" | "dance" | "wave" | "clap" | "spin" | "bow"
+  | "nod" | "shake-head" | "laugh" | "wink" | "high-five"
+  | "hug" | "celebrating" | "fly" | "sleep" | "cry" | "yawn" | null;
+
 interface UseRealtimeVoiceReturn {
   // Connection
   connect: () => Promise<void>;
@@ -19,10 +24,22 @@ interface UseRealtimeVoiceReturn {
   isUserSpeaking: boolean;
   isAISpeaking: boolean;
   messages: Message[];
+  currentAction: ActionType;
 
   // Error
   error: string | null;
   clearError: () => void;
+}
+
+// Parse action from AI response like "[ACTION:jump] Hello!"
+function parseAction(text: string): { action: ActionType; cleanText: string } {
+  const match = text.match(/^\[ACTION:([a-z-]+)\]\s*/i);
+  if (match) {
+    const action = match[1].toLowerCase() as ActionType;
+    const cleanText = text.replace(match[0], "");
+    return { action, cleanText };
+  }
+  return { action: null, cleanText: text };
 }
 
 type RealtimeEvent = {
@@ -37,12 +54,14 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [currentAction, setCurrentAction] = useState<ActionType>(null);
   const [error, setError] = useState<string | null>(null);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const actionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -111,11 +130,35 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
       case "response.audio_transcript.done":
         // AI's response transcript
         if (event.transcript) {
+          const { action, cleanText } = parseAction(event.transcript);
+
+          // Set action animation
+          if (action) {
+            if (actionTimeoutRef.current) {
+              clearTimeout(actionTimeoutRef.current);
+            }
+            setCurrentAction(action);
+
+            // Clear action after animation duration
+            const durations: Record<string, number> = {
+              "jump": 2000, "spin": 3000, "dance": 4000, "fly": 4000,
+              "wave": 3000, "clap": 3000, "bow": 2000, "nod": 2000,
+              "shake-head": 2000, "laugh": 3000, "wink": 2000,
+              "high-five": 2000, "hug": 3000, "celebrating": 3000,
+              "sleep": 4000, "cry": 3000, "yawn": 3000,
+            };
+            const duration = durations[action] || 3000;
+
+            actionTimeoutRef.current = setTimeout(() => {
+              setCurrentAction(null);
+            }, duration);
+          }
+
           setMessages((prev) => [
             ...prev,
             {
               id: event.item_id || Date.now().toString(),
-              text: event.transcript,
+              text: cleanText,
               isUser: false,
             },
           ]);
@@ -274,6 +317,9 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
   useEffect(() => {
     return () => {
       cleanup();
+      if (actionTimeoutRef.current) {
+        clearTimeout(actionTimeoutRef.current);
+      }
     };
   }, [cleanup]);
 
@@ -285,6 +331,7 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
     isUserSpeaking,
     isAISpeaking,
     messages,
+    currentAction,
     error,
     clearError,
   };

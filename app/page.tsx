@@ -14,12 +14,14 @@ export default function Home() {
     isUserSpeaking,
     isAISpeaking,
     messages,
+    currentAction,
     error,
     clearError,
   } = useRealtimeVoice();
 
-  // Determine mascot mood
+  // Determine mascot mood - action takes priority
   const getMascotMood = (): MascotMood => {
+    if (currentAction) return currentAction as MascotMood;
     if (isUserSpeaking) return "listening";
     if (isAISpeaking) return "speaking";
     if (isConnecting) return "thinking";
