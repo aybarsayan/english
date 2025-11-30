@@ -41,7 +41,7 @@ export default function StoryDisplay({
       {/* Fun Decorations */}
       <div className="flex justify-center gap-4 mt-6 text-3xl">
         <span className="animate-float" style={{ animationDelay: "0s" }}>⭐</span>
-        <span className="animate-float" style={{ animationDelay: "0.5s" }}>🌈</span>
+        <span className="animate-float" style={{ animationDelay: "0.5s" }}>🌟</span>
         <span className="animate-float" style={{ animationDelay: "1s" }}>✨</span>
       </div>
     </div>

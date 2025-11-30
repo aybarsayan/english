@@ -18,7 +18,7 @@ interface VocabularyData {
 
 const categories = [
   { value: "animals", label: "Animals 🐾" },
-  { value: "colors", label: "Colors 🌈" },
+  { value: "colors", label: "Colors 🎨" },
   { value: "numbers", label: "Numbers 🔢" },
   { value: "family", label: "Family 👨‍👩‍👧‍👦" },
   { value: "food", label: "Food 🍎" },
