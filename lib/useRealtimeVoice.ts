@@ -26,6 +26,10 @@ interface UseRealtimeVoiceReturn {
   messages: Message[];
   currentAction: ActionType;
 
+  // Microphone
+  isMuted: boolean;
+  toggleMute: () => void;
+
   // Error
   error: string | null;
   clearError: () => void;
@@ -46,6 +50,7 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentAction, setCurrentAction] = useState<ActionType>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
@@ -54,6 +59,17 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
   const actionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const clearError = useCallback(() => setError(null), []);
+
+  // Toggle microphone mute
+  const toggleMute = useCallback(() => {
+    if (mediaStreamRef.current) {
+      const audioTrack = mediaStreamRef.current.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsMuted(!audioTrack.enabled);
+      }
+    }
+  }, []);
 
   // Cleanup function
   const cleanup = useCallback(() => {
@@ -350,6 +366,8 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
     isAISpeaking,
     messages,
     currentAction,
+    isMuted,
+    toggleMute,
     error,
     clearError,
   };
