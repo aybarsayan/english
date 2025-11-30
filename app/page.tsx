@@ -1,251 +1,93 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
 import Mascot, { MascotMood } from "@/components/Mascot";
-import { useVoice } from "@/lib/useVoice";
-
-interface Message {
-  id: string;
-  text: string;
-  isUser: boolean;
-}
-
-// Parse action from response like "[ACTION:jump] Hello!"
-function parseAction(response: string): { action: MascotMood | null; text: string } {
-  const actionMatch = response.match(/^\[ACTION:([a-z-]+)\]\s*/i);
-  if (actionMatch) {
-    const action = actionMatch[1].toLowerCase() as MascotMood;
-    const text = response.replace(actionMatch[0], "");
-    return { action, text };
-  }
-  return { action: null, text: response };
-}
+import { useRealtimeVoice } from "@/lib/useRealtimeVoice";
 
 export default function Home() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [mascotMood, setMascotMood] = useState<MascotMood>("happy");
-  const [textInput, setTextInput] = useState("");
-  const [hasStarted, setHasStarted] = useState(false);
-  const [currentAction, setCurrentAction] = useState<MascotMood | null>(null);
-  const actionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
   const {
-    speak,
-    stopSpeaking,
-    isSpeaking,
-    startListening,
-    stopListening,
-    isListening,
-    transcript,
-    resetTranscript,
-    isSupported,
+    connect,
+    disconnect,
+    isConnected,
+    isConnecting,
+    isUserSpeaking,
+    isAISpeaking,
+    messages,
     error,
     clearError,
-  } = useVoice();
+  } = useRealtimeVoice();
 
-  // Update mascot mood based on state
+  // Determine mascot mood
+  const getMascotMood = (): MascotMood => {
+    if (isUserSpeaking) return "listening";
+    if (isAISpeaking) return "speaking";
+    if (isConnecting) return "thinking";
+    return "happy";
+  };
+
+  // Auto-clear error
   useEffect(() => {
-    // If there's an active action animation, prioritize it
-    if (currentAction) {
-      setMascotMood(currentAction);
-    } else if (isListening) {
-      setMascotMood("listening");
-    } else if (isSpeaking) {
-      setMascotMood("speaking");
-    } else if (isLoading) {
-      setMascotMood("thinking");
-    } else {
-      setMascotMood("happy");
+    if (error) {
+      const timer = setTimeout(clearError, 5000);
+      return () => clearTimeout(timer);
     }
-  }, [isListening, isSpeaking, isLoading, currentAction]);
+  }, [error, clearError]);
 
-  // Cleanup action timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (actionTimeoutRef.current) {
-        clearTimeout(actionTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Send message
-  const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim()) return;
-
-    setHasStarted(true);
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      text: text.trim(),
-      isUser: true,
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setIsLoading(true);
-    resetTranscript();
-    setTextInput("");
-
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          history: messages.slice(-6).map((m) => ({
-            role: m.isUser ? "user" : "assistant",
-            content: m.text,
-          })),
-        }),
-      });
-
-      const data = await response.json();
-      const rawResponse = data.response || "Sorry, I did not understand. Can you try again?";
-
-      // Parse action from response
-      const { action, text: botResponse } = parseAction(rawResponse);
-
-      const botMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: botResponse,
-        isUser: false,
-      };
-
-      setMessages((prev) => [...prev, botMessage]);
-
-      // Handle action animation
-      if (action) {
-        // Clear any existing action timeout
-        if (actionTimeoutRef.current) {
-          clearTimeout(actionTimeoutRef.current);
-        }
-
-        setCurrentAction(action);
-
-        // Duration varies by action type
-        const actionDurations: Record<string, number> = {
-          "jump": 2000,
-          "spin": 3000,
-          "dance": 4000,
-          "fly": 4000,
-          "run": 3000,
-          "sleep": 4000,
-          "laugh": 3000,
-          "cry": 3000,
-          "yawn": 3000,
-          "eat": 3000,
-          "hug": 3000,
-          "wave": 3000,
-          "clap": 3000,
-          "high-five": 2000,
-          "nod": 2000,
-          "shake-head": 2000,
-          "wink": 2000,
-          "bow": 2000,
-          "stretch": 2000,
-          "sit": 3000,
-          "celebrating": 3000,
-        };
-
-        const duration = actionDurations[action] || 3000;
-
-        actionTimeoutRef.current = setTimeout(() => {
-          setCurrentAction(null);
-        }, duration);
-      } else if (
-        botResponse.toLowerCase().includes("excellent") ||
-        botResponse.toLowerCase().includes("great job") ||
-        botResponse.toLowerCase().includes("superstar") ||
-        botResponse.toLowerCase().includes("amazing")
-      ) {
-        setCurrentAction("celebrating");
-        actionTimeoutRef.current = setTimeout(() => {
-          setCurrentAction(null);
-        }, 2000);
-      }
-
-      speak(botResponse);
-    } catch {
-      const errorMessage = "Oops! Something went wrong. Please try again!";
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          text: errorMessage,
-          isUser: false,
-        },
-      ]);
-      speak(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [messages, resetTranscript, speak]);
-
-  // Handle voice input completion
-  useEffect(() => {
-    if (!isListening && transcript) {
-      sendMessage(transcript);
-    }
-  }, [isListening, transcript, sendMessage]);
-
-  const handleMicClick = () => {
+  const handleStartStop = () => {
     clearError();
-    if (isSpeaking) {
-      stopSpeaking();
-    }
-
-    if (isListening) {
-      stopListening();
-    } else {
-      startListening();
-    }
-  };
-
-  const handleMascotClick = () => {
-    if (isSpeaking) {
-      stopSpeaking();
-    } else if (!hasStarted) {
-      const welcomeMessage = "Hello! I am Kai, your English learning friend! Tap the microphone button and talk to me!";
-      speak(welcomeMessage);
-      setMessages([{ id: "welcome", text: welcomeMessage, isUser: false }]);
-      setHasStarted(true);
-    } else if (messages.length > 0) {
-      const lastBotMessage = [...messages].reverse().find((m) => !m.isUser);
-      if (lastBotMessage) {
-        speak(lastBotMessage.text);
-      }
-    }
-  };
-
-  const handleTextSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (textInput.trim()) {
-      sendMessage(textInput);
+    if (isConnected) {
+      disconnect();
+    } else if (!isConnecting) {
+      connect();
     }
   };
 
   return (
     <div className="min-h-[calc(100vh-80px)] flex flex-col">
-      {/* Main Content - Centered */}
+      {/* Main Content */}
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
 
         {/* Large Mascot */}
         <div className="mb-4">
-          <Mascot mood={mascotMood} size="xlarge" onClick={handleMascotClick} />
+          <Mascot mood={getMascotMood()} size="xlarge" onClick={handleStartStop} />
         </div>
 
         {/* Mascot Name */}
         <h1 className="text-4xl md:text-5xl font-bold text-purple-600 mb-2">Kai</h1>
         <p className="text-gray-600 mb-6 text-center">
-          {isSpeaking ? "Speaking..." : hasStarted ? "Tap me to hear again!" : "Tap me or the microphone to start!"}
+          {isConnecting && "Connecting..."}
+          {!isConnected && !isConnecting && "Tap to start talking!"}
+          {isConnected && isUserSpeaking && "Listening to you..."}
+          {isConnected && isAISpeaking && "Speaking..."}
+          {isConnected && !isUserSpeaking && !isAISpeaking && "Say something!"}
         </p>
 
-        {/* Speech Bubble - Shows conversation */}
-        {hasStarted && messages.length > 0 && (
+        {/* Connection Status */}
+        {isConnected && (
+          <div className="flex items-center gap-2 mb-4">
+            <div className={`w-3 h-3 rounded-full ${
+              isUserSpeaking ? "bg-green-500 animate-pulse" :
+              isAISpeaking ? "bg-purple-500 animate-pulse" :
+              "bg-green-500"
+            }`} />
+            <span className="text-sm text-gray-500">
+              {isUserSpeaking ? "Listening..." : isAISpeaking ? "Kai is talking..." : "Connected - just speak!"}
+            </span>
+          </div>
+        )}
+
+        {/* Speech Bubble - Conversation */}
+        {(isConnected || messages.length > 0) && (
           <div className="bg-white rounded-3xl p-4 shadow-xl max-w-md w-full mb-6 relative">
             <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-b-8 border-transparent border-b-white"></div>
-            <div className="max-h-32 overflow-y-auto space-y-2">
-              {messages.slice(-2).map((message) => (
+            <div className="max-h-40 overflow-y-auto space-y-2">
+              {messages.length === 0 && isConnected && (
+                <p className="text-gray-400 text-center py-2 animate-pulse">
+                  Say "Hello Kai!"
+                </p>
+              )}
+              {messages.slice(-4).map((message) => (
                 <div
                   key={message.id}
                   className={`p-2 rounded-xl text-sm ${
@@ -258,110 +100,75 @@ export default function Home() {
                   {message.text}
                 </div>
               ))}
-              {isLoading && (
-                <div className="bg-purple-100 text-purple-800 p-2 rounded-xl text-sm mr-8">
-                  <span className="font-medium">Kai: </span>
-                  <span className="animate-pulse">Thinking...</span>
-                </div>
-              )}
-              {isListening && (
-                <div className="bg-green-100 text-green-800 p-2 rounded-xl text-sm">
-                  <span className="font-medium">Listening: </span>
-                  {transcript || "Say something..."}
+              {isUserSpeaking && (
+                <div className="bg-green-100 text-green-800 p-2 rounded-xl text-sm animate-pulse">
+                  <span className="font-medium">You: </span>Speaking...
                 </div>
               )}
             </div>
           </div>
         )}
 
-        {/* Error Message */}
+        {/* Error */}
         {error && (
           <div className="bg-red-100 border border-red-300 rounded-xl p-3 mb-4 max-w-md w-full text-center">
             <p className="text-red-700 text-sm">{error}</p>
           </div>
         )}
 
-        {/* Big Microphone Button */}
+        {/* Main Button */}
         <button
-          onClick={handleMicClick}
-          disabled={isLoading}
+          onClick={handleStartStop}
+          disabled={isConnecting}
           className={`w-24 h-24 md:w-28 md:h-28 rounded-full flex items-center justify-center shadow-2xl transform transition-all duration-200 ${
-            isListening
-              ? "bg-red-500 hover:bg-red-600 scale-110 animate-pulse"
-              : "bg-gradient-to-br from-green-400 to-emerald-600 hover:from-green-500 hover:to-emerald-700 hover:scale-105"
-          } ${isLoading ? "opacity-50 cursor-not-allowed" : ""}`}
+            isConnected
+              ? "bg-red-500 hover:bg-red-600"
+              : "bg-gradient-to-br from-green-400 to-emerald-600 hover:from-green-500 hover:to-emerald-700"
+          } ${isConnecting ? "opacity-50 cursor-not-allowed animate-pulse" : "hover:scale-105"} ${
+            isUserSpeaking ? "ring-4 ring-green-300 animate-pulse" : ""
+          }`}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 md:h-14 md:w-14 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            {isListening ? (
+          {isConnecting ? (
+            <svg className="w-12 h-12 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          ) : isConnected ? (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 md:h-14 md:w-14 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <rect x="6" y="6" width="12" height="12" strokeWidth={2} fill="white" />
-            ) : (
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 md:h-14 md:w-14 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-            )}
-          </svg>
+            </svg>
+          )}
         </button>
         <p className="text-gray-600 font-medium mt-3 text-lg">
-          {isListening ? "Tap to stop" : "Tap to talk"}
+          {isConnecting ? "Connecting..." : isConnected ? "Tap to end" : "Tap to start"}
         </p>
 
-        {/* Text Input */}
-        <form onSubmit={handleTextSubmit} className="mt-6 w-full max-w-md">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={textInput}
-              onChange={(e) => setTextInput(e.target.value)}
-              placeholder="Or type here..."
-              className="flex-1 px-4 py-3 rounded-full border-2 border-purple-200 focus:border-purple-400 focus:outline-none text-gray-700"
-              disabled={isLoading || isListening}
-            />
-            <button
-              type="submit"
-              disabled={isLoading || isListening || !textInput.trim()}
-              className="px-6 py-3 bg-gradient-to-r from-purple-500 to-violet-600 text-white font-bold rounded-full hover:shadow-lg transition-all disabled:opacity-50"
-            >
-              Send
-            </button>
+        {/* Instructions when not connected */}
+        {!isConnected && !isConnecting && (
+          <div className="mt-6 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-2xl p-4 max-w-md w-full border border-purple-200">
+            <h3 className="font-bold text-purple-700 mb-2 text-center text-sm">How it works</h3>
+            <ul className="text-xs text-gray-600 space-y-1">
+              <li>1. Tap the green button to start</li>
+              <li>2. Just talk naturally - no need to press anything!</li>
+              <li>3. Kai will respond automatically when you pause</li>
+              <li>4. Tap red button to end the conversation</li>
+            </ul>
           </div>
-        </form>
+        )}
 
-        {/* Quick Phrases */}
-        <div className="mt-4 flex flex-wrap justify-center gap-2 max-w-md">
-          {["Hello!", "How are you?", "What is your name?", "Thank you!"].map((phrase) => (
-            <button
-              key={phrase}
-              onClick={() => sendMessage(phrase)}
-              disabled={isLoading || isListening}
-              className="px-3 py-1.5 bg-white rounded-full text-sm font-medium text-gray-600 shadow hover:shadow-md hover:bg-gray-50 transition-all disabled:opacity-50"
-            >
-              {phrase}
-            </button>
-          ))}
-        </div>
-
-        {/* Action Commands */}
-        <div className="mt-3 flex flex-wrap justify-center gap-2 max-w-lg">
-          <p className="w-full text-center text-xs text-gray-400 mb-1">Try these actions:</p>
-          {[
-            { cmd: "Jump!", color: "bg-yellow-100 text-yellow-700" },
-            { cmd: "Dance!", color: "bg-pink-100 text-pink-700" },
-            { cmd: "Wave!", color: "bg-blue-100 text-blue-700" },
-            { cmd: "Spin!", color: "bg-purple-100 text-purple-700" },
-            { cmd: "High five!", color: "bg-green-100 text-green-700" },
-            { cmd: "Sleep!", color: "bg-indigo-100 text-indigo-700" },
-          ].map(({ cmd, color }) => (
-            <button
-              key={cmd}
-              onClick={() => sendMessage(cmd)}
-              disabled={isLoading || isListening}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium shadow hover:shadow-md transition-all disabled:opacity-50 ${color}`}
-            >
-              {cmd}
-            </button>
-          ))}
-        </div>
+        {/* Tips when connected */}
+        {isConnected && (
+          <div className="mt-4 text-center text-xs text-gray-400 max-w-md">
+            Just speak naturally! Kai will listen and respond automatically.
+          </div>
+        )}
       </div>
 
-      {/* Bottom Navigation - Mode Links */}
+      {/* Bottom Navigation */}
       <div className="bg-white/80 backdrop-blur border-t border-gray-200 py-4 px-4">
         <div className="flex justify-center gap-4 md:gap-8 max-w-2xl mx-auto">
           <Link href="/chat" className="flex flex-col items-center text-gray-600 hover:text-purple-600 transition-colors">
