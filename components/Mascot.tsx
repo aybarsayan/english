@@ -115,13 +115,12 @@ export default function Mascot({ mood = "happy", size = "medium", onClick }: Mas
     }
   };
 
-  const getEyeStyle = () => {
-    if (mood === "sleep") return "scale-y-0";
-    if (mood === "cry") return "";
-    if (isBlinking) return "scale-y-0";
-    if (mood === "listening" || mood === "jump" || mood === "high-five") return "scale-110";
-    if (mood === "yawn") return "scale-y-75";
-    return "";
+  // Eye scale değerleri - CSS yerine SVG transform kullanacağız
+  const getEyeScale = () => {
+    if (mood === "sleep" || isBlinking) return { scaleX: 1, scaleY: 0.1 };
+    if (mood === "listening" || mood === "jump" || mood === "high-five") return { scaleX: 1.1, scaleY: 1.1 };
+    if (mood === "yawn") return { scaleX: 1, scaleY: 0.75 };
+    return { scaleX: 1, scaleY: 1 };
   };
 
   const getLeftEye = () => {
@@ -151,8 +150,9 @@ export default function Mascot({ mood = "happy", size = "medium", onClick }: Mas
         </g>
       );
     }
+    const eyeScale = getEyeScale();
     return (
-      <g className={`transition-transform duration-150 ${getEyeStyle()}`}>
+      <g transform={`translate(75, 90) scale(${eyeScale.scaleX}, ${eyeScale.scaleY}) translate(-75, -90)`} style={{ transition: 'transform 0.15s ease' }}>
         <circle cx="75" cy="90" r="18" fill="white" stroke="#6366f1" strokeWidth="3" />
         <circle cx="75" cy="90" r="12" fill="#1a1a2e" />
         <circle cx="78" cy="87" r="4" fill="white" />
@@ -188,8 +188,9 @@ export default function Mascot({ mood = "happy", size = "medium", onClick }: Mas
         </g>
       );
     }
+    const eyeScale = getEyeScale();
     return (
-      <g className={`transition-transform duration-150 ${getEyeStyle()}`}>
+      <g transform={`translate(125, 90) scale(${eyeScale.scaleX}, ${eyeScale.scaleY}) translate(-125, -90)`} style={{ transition: 'transform 0.15s ease' }}>
         <circle cx="125" cy="90" r="18" fill="white" stroke="#6366f1" strokeWidth="3" />
         <circle cx="125" cy="90" r="12" fill="#1a1a2e" />
         <circle cx="128" cy="87" r="4" fill="white" />
@@ -501,7 +502,8 @@ export default function Mascot({ mood = "happy", size = "medium", onClick }: Mas
 
   return (
     <div
-      className={`${sizeClasses[size]} ${getMoodAnimation()} cursor-pointer transition-transform hover:scale-110`}
+      className={`${sizeClasses[size]} ${getMoodAnimation()} cursor-pointer hover:scale-110`}
+      style={{ transformOrigin: 'center bottom', transition: 'transform 0.2s ease' }}
       onClick={onClick}
     >
       <svg viewBox="0 0 200 200" className="w-full h-full drop-shadow-lg">

@@ -46,14 +46,17 @@ body {
 
 .animate-bounce-slow {
   animation: bounce-slow 2s ease-in-out infinite;
+  transform-origin: center bottom;
 }
 
 .animate-wiggle {
   animation: wiggle 1s ease-in-out infinite;
+  transform-origin: center bottom;
 }
 
 .animate-float {
   animation: float 3s ease-in-out infinite;
+  transform-origin: center bottom;
 }
 
 .animate-pulse-glow {
@@ -279,82 +282,102 @@ body {
 
 .animate-jump {
   animation: jump 0.8s ease-in-out;
+  transform-origin: center bottom;
 }
 
 .animate-dance {
   animation: dance 0.6s ease-in-out infinite;
+  transform-origin: center bottom;
 }
 
 .animate-spin {
   animation: spin 1s linear;
+  transform-origin: center center;
 }
 
 .animate-spin-infinite {
   animation: spin 1s linear infinite;
+  transform-origin: center center;
 }
 
 .animate-wave {
   animation: wave 0.5s ease-in-out infinite;
+  transform-origin: center bottom;
 }
 
 .animate-fly {
   animation: fly 2s ease-in-out infinite;
+  transform-origin: center center;
 }
 
 .animate-run {
   animation: run 0.3s ease-in-out infinite;
+  transform-origin: center bottom;
 }
 
 .animate-stretch {
   animation: stretch 1.5s ease-in-out;
+  transform-origin: center bottom;
 }
 
 .animate-bow {
   animation: bow 1s ease-in-out;
+  transform-origin: center bottom;
 }
 
 .animate-nod {
   animation: nod 0.5s ease-in-out 3;
+  transform-origin: center center;
 }
 
 .animate-shake-head {
   animation: shake-head 0.4s ease-in-out 3;
+  transform-origin: center center;
 }
 
 .animate-clap {
   animation: clap 0.3s ease-in-out infinite;
+  transform-origin: center center;
 }
 
 .animate-high-five {
   animation: high-five 0.6s ease-in-out;
+  transform-origin: center bottom;
 }
 
 .animate-hug {
   animation: hug 1s ease-in-out infinite;
+  transform-origin: center center;
 }
 
 .animate-eat {
   animation: eat 0.4s ease-in-out infinite;
+  transform-origin: center bottom;
 }
 
 .animate-sleep {
   animation: sleep-breathe 3s ease-in-out infinite;
+  transform-origin: center center;
 }
 
 .animate-laugh {
   animation: laugh 0.2s ease-in-out infinite;
+  transform-origin: center bottom;
 }
 
 .animate-cry {
   animation: cry-shake 0.3s ease-in-out infinite;
+  transform-origin: center center;
 }
 
 .animate-yawn {
   animation: yawn 2s ease-in-out;
+  transform-origin: center center;
 }
 
 .animate-wink {
   animation: wink-bounce 0.5s ease-in-out;
+  transform-origin: center bottom;
 }
 
 .animate-zzz {
