@@ -30,9 +30,10 @@ interface UseRealtimeVoiceReturn {
   isMuted: boolean;
   toggleMute: () => void;
 
-  // Error
+  // Error & Support
   error: string | null;
   clearError: () => void;
+  isSupported: boolean;
 }
 
 
@@ -41,6 +42,23 @@ type RealtimeEvent = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 };
+
+// Check browser compatibility
+function checkBrowserSupport(): { supported: boolean; reason?: string } {
+  if (typeof window === "undefined") {
+    return { supported: false, reason: "Server-side rendering" };
+  }
+
+  if (typeof RTCPeerConnection === "undefined") {
+    return { supported: false, reason: "Your browser doesn't support voice calls. Please use Chrome or Safari." };
+  }
+
+  if (!navigator?.mediaDevices?.getUserMedia) {
+    return { supported: false, reason: "Your browser doesn't support microphone access. Please use Chrome or Safari." };
+  }
+
+  return { supported: true };
+}
 
 export function useRealtimeVoice(): UseRealtimeVoiceReturn {
   const [isConnected, setIsConnected] = useState(false);
@@ -51,6 +69,16 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
   const [currentAction, setCurrentAction] = useState<ActionType>(null);
   const [error, setError] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [isSupported, setIsSupported] = useState(true);
+
+  // Check browser support on mount
+  useEffect(() => {
+    const support = checkBrowserSupport();
+    setIsSupported(support.supported);
+    if (!support.supported && support.reason) {
+      setError(support.reason);
+    }
+  }, []);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
@@ -209,6 +237,13 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
   // Connect to OpenAI Realtime API
   const connect = useCallback(async () => {
     if (isConnected || isConnecting) return;
+
+    // Check browser support before connecting
+    const support = checkBrowserSupport();
+    if (!support.supported) {
+      setError(support.reason || "Browser not supported");
+      return;
+    }
 
     setIsConnecting(true);
     setError(null);
@@ -370,5 +405,6 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
     toggleMute,
     error,
     clearError,
+    isSupported,
   };
 }

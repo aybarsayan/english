@@ -19,6 +19,7 @@ export default function Home() {
     toggleMute,
     error,
     clearError,
+    isSupported,
   } = useRealtimeVoice();
 
   // Determine mascot mood - action takes priority
@@ -146,38 +147,55 @@ export default function Home() {
         )}
 
         {/* Main Button */}
-        <button
-          onClick={handleStartStop}
-          disabled={isConnecting}
-          className={`w-24 h-24 md:w-28 md:h-28 rounded-full flex items-center justify-center shadow-2xl transform transition-all duration-200 ${
-            isConnected
-              ? "bg-red-500 hover:bg-red-600"
-              : "bg-gradient-to-br from-green-400 to-emerald-600 hover:from-green-500 hover:to-emerald-700"
-          } ${isConnecting ? "opacity-50 cursor-not-allowed animate-pulse" : "hover:scale-105"} ${
-            isUserSpeaking ? "ring-4 ring-green-300 animate-pulse" : ""
-          }`}
-        >
-          {isConnecting ? (
-            <svg className="w-12 h-12 text-white animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-          ) : isConnected ? (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 md:h-14 md:w-14 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <rect x="6" y="6" width="12" height="12" strokeWidth={2} fill="white" />
-            </svg>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 md:h-14 md:w-14 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-            </svg>
-          )}
-        </button>
-        <p className="text-gray-600 font-medium mt-3 text-lg">
-          {isConnecting ? "Connecting..." : isConnected ? "Tap to end" : "Tap to start"}
-        </p>
+        {isSupported ? (
+          <>
+            <button
+              onClick={handleStartStop}
+              disabled={isConnecting}
+              className={`w-24 h-24 md:w-28 md:h-28 rounded-full flex items-center justify-center shadow-2xl transform transition-all duration-200 ${
+                isConnected
+                  ? "bg-red-500 hover:bg-red-600"
+                  : "bg-gradient-to-br from-green-400 to-emerald-600 hover:from-green-500 hover:to-emerald-700"
+              } ${isConnecting ? "opacity-50 cursor-not-allowed animate-pulse" : "hover:scale-105"} ${
+                isUserSpeaking ? "ring-4 ring-green-300 animate-pulse" : ""
+              }`}
+            >
+              {isConnecting ? (
+                <svg className="w-12 h-12 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              ) : isConnected ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 md:h-14 md:w-14 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <rect x="6" y="6" width="12" height="12" strokeWidth={2} fill="white" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 md:h-14 md:w-14 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+              )}
+            </button>
+            <p className="text-gray-600 font-medium mt-3 text-lg">
+              {isConnecting ? "Connecting..." : isConnected ? "Tap to end" : "Tap to start"}
+            </p>
+          </>
+        ) : (
+          <>
+            <Link
+              href="/chat"
+              className="w-24 h-24 md:w-28 md:h-28 rounded-full flex items-center justify-center shadow-2xl transform transition-all duration-200 bg-gradient-to-br from-blue-400 to-blue-600 hover:from-blue-500 hover:to-blue-700 hover:scale-105"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 md:h-14 md:w-14 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </Link>
+            <p className="text-gray-600 font-medium mt-3 text-lg">Use Text Chat</p>
+            <p className="text-gray-400 text-sm mt-1">Voice not supported on this browser</p>
+          </>
+        )}
 
         {/* Instructions when not connected */}
-        {!isConnected && !isConnecting && (
+        {!isConnected && !isConnecting && isSupported && (
           <div className="mt-6 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-2xl p-4 max-w-md w-full border border-purple-200">
             <h3 className="font-bold text-purple-700 mb-2 text-center text-sm">How it works</h3>
             <ul className="text-xs text-gray-600 space-y-1">
