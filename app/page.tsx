@@ -1,11 +1,30 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import Mascot, { MascotMood } from "@/components/Mascot";
 import { useRealtimeVoice } from "@/lib/useRealtimeVoice";
+import {
+  addUsage,
+  getRemainingSeconds,
+  isDailyLimitReached,
+  formatDuration,
+  MAX_SESSION_SECONDS,
+  DAILY_LIMIT_SECONDS,
+} from "@/lib/voiceUsage";
 
 export default function Home() {
+  const [remainingDaily, setRemainingDaily] = useState(DAILY_LIMIT_SECONDS);
+  const [dailyLimitReached, setDailyLimitReached] = useState(false);
+
+  // Session bittiğinde kullanımı kaydet
+  const handleSessionEnd = useCallback((duration: number) => {
+    console.log(`[Usage] Session ended, used ${duration} seconds`);
+    addUsage(duration);
+    setRemainingDaily(getRemainingSeconds());
+    setDailyLimitReached(isDailyLimitReached());
+  }, []);
+
   const {
     connect,
     disconnect,
@@ -15,12 +34,41 @@ export default function Home() {
     isAISpeaking,
     messages,
     currentAction,
+    sessionDuration,
+    maxSessionDuration,
     isMuted,
     toggleMute,
     error,
     clearError,
     isSupported,
-  } = useRealtimeVoice();
+  } = useRealtimeVoice({
+    maxSessionDuration: MAX_SESSION_SECONDS,
+    onSessionEnd: handleSessionEnd,
+  });
+
+  // Sayfa yüklendiğinde günlük kullanımı kontrol et
+  useEffect(() => {
+    setRemainingDaily(getRemainingSeconds());
+    setDailyLimitReached(isDailyLimitReached());
+  }, []);
+
+  // Session süresi max'a ulaştığında otomatik disconnect
+  useEffect(() => {
+    if (isConnected && sessionDuration >= maxSessionDuration) {
+      disconnect();
+    }
+  }, [isConnected, sessionDuration, maxSessionDuration, disconnect]);
+
+  // Günlük limit kontrolü - bağlıyken sürekli kontrol et
+  useEffect(() => {
+    if (isConnected) {
+      const currentRemaining = getRemainingSeconds() - sessionDuration;
+      if (currentRemaining <= 0) {
+        disconnect();
+        setDailyLimitReached(true);
+      }
+    }
+  }, [isConnected, sessionDuration, disconnect]);
 
   // Determine mascot mood - action takes priority
   const getMascotMood = (): MascotMood => {
@@ -44,9 +92,18 @@ export default function Home() {
     if (isConnected) {
       disconnect();
     } else if (!isConnecting) {
+      // Günlük limit kontrolü
+      if (dailyLimitReached) {
+        return; // Butona basılamaz zaten disabled
+      }
       connect();
     }
   };
+
+  // Kalan süreyi hesapla (mevcut session dahil)
+  const effectiveRemainingDaily = isConnected
+    ? Math.max(0, remainingDaily - sessionDuration)
+    : remainingDaily;
 
   return (
     <div className="min-h-[calc(100vh-80px)] flex flex-col">
@@ -71,39 +128,55 @@ export default function Home() {
 
         {/* Connection Status */}
         {isConnected && (
-          <div className="flex items-center gap-4 mb-4">
-            <div className="flex items-center gap-2">
-              <div className={`w-3 h-3 rounded-full ${
-                isMuted ? "bg-red-500" :
-                isUserSpeaking ? "bg-green-500 animate-pulse" :
-                isAISpeaking ? "bg-purple-500 animate-pulse" :
-                "bg-green-500"
-              }`} />
-              <span className="text-sm text-gray-500">
-                {isMuted ? "Microphone off" : isUserSpeaking ? "Listening..." : isAISpeaking ? "Kai is talking..." : "Connected - just speak!"}
-              </span>
+          <div className="flex flex-col items-center gap-2 mb-4">
+            {/* Session Timer */}
+            <div className="flex items-center gap-3 bg-white/80 rounded-full px-4 py-2 shadow">
+              <div className="flex items-center gap-2">
+                <div className={`w-3 h-3 rounded-full ${
+                  isMuted ? "bg-red-500" :
+                  isUserSpeaking ? "bg-green-500 animate-pulse" :
+                  isAISpeaking ? "bg-purple-500 animate-pulse" :
+                  "bg-green-500"
+                }`} />
+                <span className="text-sm text-gray-500">
+                  {isMuted ? "Mic off" : isUserSpeaking ? "Listening..." : isAISpeaking ? "Kai talking..." : "Ready"}
+                </span>
+              </div>
+              <div className="w-px h-4 bg-gray-300" />
+              {/* Session duration */}
+              <div className="text-sm font-mono">
+                <span className={sessionDuration >= maxSessionDuration - 60 ? "text-red-500 font-bold" : "text-gray-600"}>
+                  {formatDuration(sessionDuration)}
+                </span>
+                <span className="text-gray-400"> / {formatDuration(maxSessionDuration)}</span>
+              </div>
+              <div className="w-px h-4 bg-gray-300" />
+              {/* Mute Button */}
+              <button
+                onClick={toggleMute}
+                className={`p-1.5 rounded-full transition-all ${
+                  isMuted
+                    ? "bg-red-100 text-red-600 hover:bg-red-200"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+                title={isMuted ? "Turn microphone on" : "Turn microphone off"}
+              >
+                {isMuted ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                  </svg>
+                )}
+              </button>
             </div>
-            {/* Mute Button */}
-            <button
-              onClick={toggleMute}
-              className={`p-2 rounded-full transition-all ${
-                isMuted
-                  ? "bg-red-100 text-red-600 hover:bg-red-200"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
-              title={isMuted ? "Turn microphone on" : "Turn microphone off"}
-            >
-              {isMuted ? (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-                </svg>
-              ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                </svg>
-              )}
-            </button>
+            {/* Daily remaining */}
+            <div className="text-xs text-gray-400">
+              Bugün kalan: {formatDuration(effectiveRemainingDaily)}
+            </div>
           </div>
         )}
 
@@ -146,17 +219,34 @@ export default function Home() {
           </div>
         )}
 
+        {/* Daily Limit Warning */}
+        {dailyLimitReached && !isConnected && (
+          <div className="bg-orange-100 border border-orange-300 rounded-xl p-4 mb-4 max-w-md w-full text-center">
+            <p className="text-orange-700 font-medium">Günlük konuşma limitiniz doldu!</p>
+            <p className="text-orange-600 text-sm mt-1">Yarın tekrar konuşabilirsiniz.</p>
+          </div>
+        )}
+
+        {/* Daily Usage Info - when not connected */}
+        {!isConnected && !dailyLimitReached && isSupported && (
+          <div className="text-sm text-gray-500 mb-4">
+            Bugün kalan: <span className="font-medium text-purple-600">{formatDuration(remainingDaily)}</span>
+          </div>
+        )}
+
         {/* Main Button */}
         {isSupported ? (
           <>
             <button
               onClick={handleStartStop}
-              disabled={isConnecting}
+              disabled={isConnecting || dailyLimitReached}
               className={`w-24 h-24 md:w-28 md:h-28 rounded-full flex items-center justify-center shadow-2xl transform transition-all duration-200 ${
                 isConnected
                   ? "bg-red-500 hover:bg-red-600"
+                  : dailyLimitReached
+                  ? "bg-gray-400 cursor-not-allowed"
                   : "bg-gradient-to-br from-green-400 to-emerald-600 hover:from-green-500 hover:to-emerald-700"
-              } ${isConnecting ? "opacity-50 cursor-not-allowed animate-pulse" : "hover:scale-105"} ${
+              } ${isConnecting ? "opacity-50 cursor-not-allowed animate-pulse" : dailyLimitReached ? "" : "hover:scale-105"} ${
                 isUserSpeaking ? "ring-4 ring-green-300 animate-pulse" : ""
               }`}
             >
@@ -169,6 +259,10 @@ export default function Home() {
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 md:h-14 md:w-14 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <rect x="6" y="6" width="12" height="12" strokeWidth={2} fill="white" />
                 </svg>
+              ) : dailyLimitReached ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 md:h-14 md:w-14 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0 0v2m0-2h2m-2 0H10m10-6a8 8 0 11-16 0 8 8 0 0116 0z" />
+                </svg>
               ) : (
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 md:h-14 md:w-14 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
@@ -176,7 +270,7 @@ export default function Home() {
               )}
             </button>
             <p className="text-gray-600 font-medium mt-3 text-lg">
-              {isConnecting ? "Connecting..." : isConnected ? "Tap to end" : "Tap to start"}
+              {isConnecting ? "Connecting..." : isConnected ? "Tap to end" : dailyLimitReached ? "Limit reached" : "Tap to start"}
             </p>
           </>
         ) : (

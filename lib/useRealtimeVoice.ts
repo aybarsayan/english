@@ -13,6 +13,11 @@ type ActionType =
   | "nod" | "shake-head" | "laugh" | "wink" | "high-five"
   | "hug" | "celebrating" | "fly" | "sleep" | "cry" | "yawn" | null;
 
+interface UseRealtimeVoiceOptions {
+  maxSessionDuration?: number; // saniye cinsinden (varsayılan 600 = 10 dakika)
+  onSessionEnd?: (duration: number) => void; // oturum bittiğinde çağrılır
+}
+
 interface UseRealtimeVoiceReturn {
   // Connection
   connect: () => Promise<void>;
@@ -25,6 +30,10 @@ interface UseRealtimeVoiceReturn {
   isAISpeaking: boolean;
   messages: Message[];
   currentAction: ActionType;
+
+  // Session Duration
+  sessionDuration: number; // saniye cinsinden mevcut oturum süresi
+  maxSessionDuration: number;
 
   // Microphone
   isMuted: boolean;
@@ -60,7 +69,14 @@ function checkBrowserSupport(): { supported: boolean; reason?: string } {
   return { supported: true };
 }
 
-export function useRealtimeVoice(): UseRealtimeVoiceReturn {
+const MAX_SESSION_DURATION_DEFAULT = 300; // 5 dakika
+
+export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseRealtimeVoiceReturn {
+  const {
+    maxSessionDuration = MAX_SESSION_DURATION_DEFAULT,
+    onSessionEnd
+  } = options;
+
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
@@ -70,6 +86,7 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
   const [error, setError] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
+  const [sessionDuration, setSessionDuration] = useState(0);
 
   // Check browser support on mount
   useEffect(() => {
@@ -85,8 +102,33 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const actionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const sessionTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const sessionStartTimeRef = useRef<number | null>(null);
+  const onSessionEndRef = useRef(onSessionEnd);
 
   const clearError = useCallback(() => setError(null), []);
+
+  // Keep onSessionEnd ref updated
+  useEffect(() => {
+    onSessionEndRef.current = onSessionEnd;
+  }, [onSessionEnd]);
+
+  // Session timer - her saniye güncelle
+  useEffect(() => {
+    if (isConnected && sessionStartTimeRef.current) {
+      sessionTimerRef.current = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - sessionStartTimeRef.current!) / 1000);
+        setSessionDuration(elapsed);
+      }, 1000);
+
+      return () => {
+        if (sessionTimerRef.current) {
+          clearInterval(sessionTimerRef.current);
+          sessionTimerRef.current = null;
+        }
+      };
+    }
+  }, [isConnected]);
 
   // Toggle microphone mute
   const toggleMute = useCallback(() => {
@@ -101,6 +143,21 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
 
   // Cleanup function
   const cleanup = useCallback(() => {
+    // Session süresini hesapla ve callback'i çağır
+    if (sessionStartTimeRef.current) {
+      const finalDuration = Math.floor((Date.now() - sessionStartTimeRef.current) / 1000);
+      if (onSessionEndRef.current && finalDuration > 0) {
+        onSessionEndRef.current(finalDuration);
+      }
+      sessionStartTimeRef.current = null;
+    }
+
+    // Session timer'ı temizle
+    if (sessionTimerRef.current) {
+      clearInterval(sessionTimerRef.current);
+      sessionTimerRef.current = null;
+    }
+
     if (dataChannelRef.current) {
       dataChannelRef.current.close();
       dataChannelRef.current = null;
@@ -124,6 +181,7 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
     setIsConnected(false);
     setIsUserSpeaking(false);
     setIsAISpeaking(false);
+    setSessionDuration(0);
   }, []);
 
   // Handle incoming events from OpenAI
@@ -306,6 +364,8 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
         console.log("[Realtime] Data channel open");
         setIsConnected(true);
         setIsConnecting(false);
+        sessionStartTimeRef.current = Date.now();
+        setSessionDuration(0);
 
         // Send initial greeting request
         const greetingEvent = {
@@ -401,6 +461,8 @@ export function useRealtimeVoice(): UseRealtimeVoiceReturn {
     isAISpeaking,
     messages,
     currentAction,
+    sessionDuration,
+    maxSessionDuration,
     isMuted,
     toggleMute,
     error,
