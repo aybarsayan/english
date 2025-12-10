@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Nunito } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
+import AuthGuard from "@/components/AuthGuard";
 
 const nunito = Nunito({
   variable: "--font-nunito",
@@ -22,10 +23,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${nunito.variable} antialiased`}>
-        <Navbar />
-        <main className="pt-16 min-h-screen">
-          {children}
-        </main>
+        <AuthGuard>
+          <Navbar />
+          <main className="pt-16 min-h-screen">
+            {children}
+          </main>
+        </AuthGuard>
       </body>
     </html>
   );

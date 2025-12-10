@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
+import { LogOut } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Home" },
@@ -14,6 +16,19 @@ const navItems = [
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // Hide navbar on login page
+  if (pathname === "/login") {
+    return null;
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("parent");
+    router.push("/login");
+  };
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md shadow-sm">
@@ -40,6 +55,14 @@ export default function Navbar() {
                 {item.label}
               </Link>
             ))}
+            {/* Logout Button */}
+            <button
+              onClick={handleLogout}
+              className="ml-2 px-4 py-2 rounded-full text-gray-500 hover:text-red-600 hover:bg-red-50 transition-all duration-200 font-medium text-sm flex items-center gap-1"
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Logout</span>
+            </button>
           </div>
 
           {/* Mobile Menu Button */}
@@ -72,6 +95,17 @@ export default function Navbar() {
                   {item.label}
                 </Link>
               ))}
+              {/* Mobile Logout Button */}
+              <button
+                onClick={() => {
+                  setIsOpen(false);
+                  handleLogout();
+                }}
+                className="px-4 py-3 rounded-xl text-gray-500 hover:text-red-600 hover:bg-red-50 transition-all duration-200 font-medium text-left flex items-center gap-2"
+              >
+                <LogOut className="h-4 w-4" />
+                <span>Logout</span>
+              </button>
             </div>
           </div>
         )}
