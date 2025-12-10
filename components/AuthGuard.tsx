@@ -14,8 +14,8 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
 
   useEffect(() => {
-    // Skip auth check for login page
-    if (pathname === '/login') {
+    // Skip auth check for public pages
+    if (pathname === '/login' || pathname === '/forgot-password') {
       setIsAuthenticated(true)
       return
     }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Phone, Lock, Loader2 } from 'lucide-react'
 import Mascot from '@/components/Mascot'
 import { normalizePhoneNumber, isValidPhoneNumber } from '@/lib/utils'
@@ -13,7 +14,7 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [mascotMood, setMascotMood] = useState<'happy' | 'celebrating'>('happy')
+  const [mascotMood, setMascotMood] = useState<'sit' | 'celebrating'>('sit')
 
   // Load remembered phone on mount
   useEffect(() => {
@@ -138,18 +139,26 @@ export default function LoginPage() {
               />
             </div>
 
-            {/* Remember Me */}
-            <div className="flex items-center">
-              <input
-                id="remember-me"
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded cursor-pointer"
-              />
-              <label htmlFor="remember-me" className="ml-2 text-sm text-gray-600 cursor-pointer">
-                Beni hatırla
-              </label>
+            {/* Remember Me & Forgot Password */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <input
+                  id="remember-me"
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded cursor-pointer"
+                />
+                <label htmlFor="remember-me" className="ml-2 text-sm text-gray-600 cursor-pointer">
+                  Beni hatırla
+                </label>
+              </div>
+              <Link
+                href="/forgot-password"
+                className="text-sm text-purple-600 hover:text-purple-800 font-medium"
+              >
+                Şifremi unuttum
+              </Link>
             </div>
           </div>
 

@@ -11,8 +11,22 @@ model Parent {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
   email         String   @unique
   password      String
+  plainPassword String?
   name          String
   phone         String   @unique
+  studentIds    String[] @db.ObjectId
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model Student {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  code      String   @unique
+  name      String
+  grade     String
+  age       Int
+  parentId  String   @db.ObjectId
+  parentIds String[] @db.ObjectId
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

@@ -19,8 +19,8 @@ export default function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Hide navbar on login page
-  if (pathname === "/login") {
+  // Hide navbar on auth pages
+  if (pathname === "/login" || pathname === "/forgot-password") {
     return null;
   }
 
