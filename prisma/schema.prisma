@@ -1,0 +1,35 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model VoiceSession {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  studentName String    // Normalized: "ali yilmaz" (gruplama icin)
+  firstName   String    // Display: "Ali"
+  lastName    String    // Display: "Yilmaz"
+  grade       Int       // 1-8
+  section     String    // A-K
+  messages    Message[]
+  duration    Int       // saniye
+  createdAt   DateTime  @default(now())
+
+  @@index([grade, section])
+  @@index([studentName])
+}
+
+type Message {
+  id     String
+  text   String
+  isUser Boolean
+}

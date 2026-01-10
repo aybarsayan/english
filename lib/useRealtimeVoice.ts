@@ -6,6 +6,14 @@ interface Message {
   id: string;
   text: string;
   isUser: boolean;
+  order: number; // Konuşma sırası
+}
+
+// Pending transcript'ler için - item oluşturuldu ama transcript henüz gelmedi
+interface PendingItem {
+  id: string;
+  isUser: boolean;
+  order: number;
 }
 
 type ActionType =
@@ -15,7 +23,7 @@ type ActionType =
 
 interface UseRealtimeVoiceOptions {
   maxSessionDuration?: number; // saniye cinsinden (varsayılan 600 = 10 dakika)
-  onSessionEnd?: (duration: number) => void; // oturum bittiğinde çağrılır
+  onSessionEnd?: (duration: number, messages: Message[]) => void; // oturum bittiğinde çağrılır
 }
 
 interface UseRealtimeVoiceReturn {
@@ -105,6 +113,9 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
   const sessionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const sessionStartTimeRef = useRef<number | null>(null);
   const onSessionEndRef = useRef(onSessionEnd);
+  const messagesRef = useRef<Message[]>([]);
+  const pendingItemsRef = useRef<Map<string, PendingItem>>(new Map());
+  const orderCounterRef = useRef(0);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -112,6 +123,11 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
   useEffect(() => {
     onSessionEndRef.current = onSessionEnd;
   }, [onSessionEnd]);
+
+  // Keep messagesRef in sync with messages state
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   // Session timer - her saniye güncelle
   useEffect(() => {
@@ -147,7 +163,7 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
     if (sessionStartTimeRef.current) {
       const finalDuration = Math.floor((Date.now() - sessionStartTimeRef.current) / 1000);
       if (onSessionEndRef.current && finalDuration > 0) {
-        onSessionEndRef.current(finalDuration);
+        onSessionEndRef.current(finalDuration, messagesRef.current);
       }
       sessionStartTimeRef.current = null;
     }
@@ -182,6 +198,20 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
     setIsUserSpeaking(false);
     setIsAISpeaking(false);
     setSessionDuration(0);
+
+    // Reset order tracking
+    pendingItemsRef.current.clear();
+    orderCounterRef.current = 0;
+  }, []);
+
+  // Helper: Mesajları sıralı ekle
+  const addMessageSorted = useCallback((newMsg: Message) => {
+    setMessages((prev) => {
+      const updated = [...prev, newMsg];
+      // Order'a göre sırala
+      updated.sort((a, b) => a.order - b.order);
+      return updated;
+    });
   }, []);
 
   // Handle incoming events from OpenAI
@@ -205,33 +235,57 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
         setIsAISpeaking(false);
         break;
 
-      case "conversation.item.input_audio_transcription.completed":
+      // Yeni conversation item oluşturulduğunda - sırayı kaydet
+      case "conversation.item.created": {
+        const item = event.item;
+        if (item && item.id) {
+          const isUser = item.role === "user";
+          const order = orderCounterRef.current++;
+          pendingItemsRef.current.set(item.id, { id: item.id, isUser, order });
+          console.log("[Realtime] Item created:", item.id, "order:", order, "isUser:", isUser);
+        }
+        break;
+      }
+
+      case "conversation.item.input_audio_transcription.completed": {
         // User's speech transcript
         if (event.transcript) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: event.item_id || Date.now().toString(),
-              text: event.transcript,
-              isUser: true,
-            },
-          ]);
+          const itemId = event.item_id || Date.now().toString();
+          const pending = pendingItemsRef.current.get(itemId);
+          const order = pending?.order ?? orderCounterRef.current++;
+
+          addMessageSorted({
+            id: itemId,
+            text: event.transcript,
+            isUser: true,
+            order,
+          });
+
+          // Pending'den sil
+          pendingItemsRef.current.delete(itemId);
         }
         break;
+      }
 
-      case "response.audio_transcript.done":
+      case "response.audio_transcript.done": {
         // AI's response transcript
         if (event.transcript) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: event.item_id || Date.now().toString(),
-              text: event.transcript,
-              isUser: false,
-            },
-          ]);
+          const itemId = event.item_id || Date.now().toString();
+          const pending = pendingItemsRef.current.get(itemId);
+          const order = pending?.order ?? orderCounterRef.current++;
+
+          addMessageSorted({
+            id: itemId,
+            text: event.transcript,
+            isUser: false,
+            order,
+          });
+
+          // Pending'den sil
+          pendingItemsRef.current.delete(itemId);
         }
         break;
+      }
 
       case "response.output_item.done":
         // Function call completed

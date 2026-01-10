@@ -3,7 +3,10 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import Mascot, { MascotMood } from "@/components/Mascot";
+import StudentRegistrationForm from "@/components/StudentRegistrationForm";
 import { useRealtimeVoice } from "@/lib/useRealtimeVoice";
+import { StudentInfo, Message } from "@/lib/types";
+import { createStudentKey } from "@/lib/nameUtils";
 import {
   addUsage,
   getRemainingSeconds,
@@ -13,17 +16,58 @@ import {
   DAILY_LIMIT_SECONDS,
 } from "@/lib/voiceUsage";
 
+const STUDENT_STORAGE_KEY = "kai_student_info";
+
 export default function Home() {
   const [remainingDaily, setRemainingDaily] = useState(DAILY_LIMIT_SECONDS);
   const [dailyLimitReached, setDailyLimitReached] = useState(false);
+  const [studentInfo, setStudentInfo] = useState<StudentInfo | null>(null);
+  const [showRegistration, setShowRegistration] = useState(false);
 
-  // Session bittiğinde kullanımı kaydet
-  const handleSessionEnd = useCallback((duration: number) => {
+  // Load student info from sessionStorage on mount
+  useEffect(() => {
+    const loadStudentInfo = () => {
+      try {
+        const saved = sessionStorage.getItem(STUDENT_STORAGE_KEY);
+        if (saved) {
+          setStudentInfo(JSON.parse(saved));
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    };
+    loadStudentInfo();
+  }, []);
+
+  // Session bittiğinde kullanımı kaydet ve veritabanına gönder
+  const handleSessionEnd = useCallback(async (duration: number, sessionMessages: Message[]) => {
     console.log(`[Usage] Session ended, used ${duration} seconds`);
     addUsage(duration);
     setRemainingDaily(getRemainingSeconds());
     setDailyLimitReached(isDailyLimitReached());
-  }, []);
+
+    // Save to database if student info exists
+    if (studentInfo && sessionMessages.length > 0) {
+      try {
+        await fetch("/api/voice-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            studentName: createStudentKey(studentInfo.firstName, studentInfo.lastName),
+            firstName: studentInfo.firstName,
+            lastName: studentInfo.lastName,
+            grade: studentInfo.grade,
+            section: studentInfo.section,
+            messages: sessionMessages,
+            duration,
+          }),
+        });
+        console.log("[Usage] Session saved to database");
+      } catch (error) {
+        console.error("[Usage] Failed to save session:", error);
+      }
+    }
+  }, [studentInfo]);
 
   const {
     connect,
@@ -96,8 +140,21 @@ export default function Home() {
       if (dailyLimitReached) {
         return; // Butona basılamaz zaten disabled
       }
+      // Öğrenci bilgisi yoksa form göster
+      if (!studentInfo) {
+        setShowRegistration(true);
+        return;
+      }
       connect();
     }
+  };
+
+  // Öğrenci formu submit edildiğinde
+  const handleStudentSubmit = (info: StudentInfo) => {
+    setStudentInfo(info);
+    setShowRegistration(false);
+    // Form kaydedildi, şimdi bağlan
+    connect();
   };
 
   // Kalan süreyi hesapla (mevcut session dahil)
@@ -107,6 +164,14 @@ export default function Home() {
 
   return (
     <div className="min-h-[calc(100vh-80px)] flex flex-col">
+      {/* Student Registration Form Modal */}
+      {showRegistration && (
+        <StudentRegistrationForm
+          onSubmit={handleStudentSubmit}
+          onCancel={() => setShowRegistration(false)}
+        />
+      )}
+
       {/* Main Content */}
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
 
@@ -231,6 +296,33 @@ export default function Home() {
         {!isConnected && !dailyLimitReached && isSupported && (
           <div className="text-sm text-gray-500 mb-4">
             Bugün kalan: <span className="font-medium text-purple-600">{formatDuration(remainingDaily)}</span>
+          </div>
+        )}
+
+        {/* Student Info Badge - when student is registered */}
+        {studentInfo && !isConnected && (
+          <div className="flex items-center gap-2 mb-4 bg-purple-50 rounded-full px-4 py-2 border border-purple-200">
+            <div className="w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center">
+              <span className="text-white text-xs font-bold">
+                {studentInfo.firstName.charAt(0)}
+              </span>
+            </div>
+            <span className="text-purple-700 font-medium">
+              {studentInfo.firstName} {studentInfo.lastName}
+            </span>
+            <span className="text-purple-500 text-sm">
+              {studentInfo.grade}/{studentInfo.section}
+            </span>
+            <button
+              onClick={() => {
+                sessionStorage.removeItem(STUDENT_STORAGE_KEY);
+                setStudentInfo(null);
+              }}
+              className="ml-1 text-purple-400 hover:text-purple-600 text-xs"
+              title="Öğrenci değiştir"
+            >
+              (değiştir)
+            </button>
           </div>
         )}
 
