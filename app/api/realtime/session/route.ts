@@ -9,7 +9,7 @@ export async function POST() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-realtime-preview-2024-12-17",
+        model: "gpt-4o-mini-realtime-preview",
         voice: "shimmer",
         instructions: `You are Kai, a friendly and encouraging English teacher for children aged 6-12 years old.
 

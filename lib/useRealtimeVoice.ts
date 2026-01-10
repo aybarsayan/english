@@ -404,7 +404,7 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
       // 8. Send offer to OpenAI and get answer
       console.log("[Realtime] Connecting to OpenAI...");
       const sdpResponse = await fetch(
-        "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
+        "https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview",
         {
           method: "POST",
           headers: {
