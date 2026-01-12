@@ -20,7 +20,7 @@
 body {
   background: linear-gradient(135deg, #e0f2fe 0%, #fae8ff 50%, #fef3c7 100%);
   min-height: 100vh;
-  font-family: 'Comic Sans MS', 'Chalkboard', 'Comic Neue', cursive, sans-serif;
+  font-family: var(--font-nunito), 'Nunito', sans-serif;
 }
 
 /* Fun animations for kids */
