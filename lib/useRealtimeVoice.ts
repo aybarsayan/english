@@ -6,10 +6,9 @@ interface Message {
   id: string;
   text: string;
   isUser: boolean;
-  order: number; // Konuşma sırası
+  order: number;
 }
 
-// Pending transcript'ler için - item oluşturuldu ama transcript henüz gelmedi
 interface PendingItem {
   id: string;
   isUser: boolean;
@@ -22,37 +21,30 @@ type ActionType =
   | "hug" | "celebrating" | "fly" | "sleep" | "cry" | "yawn" | null;
 
 interface UseRealtimeVoiceOptions {
-  maxSessionDuration?: number; // saniye cinsinden (varsayılan 600 = 10 dakika)
-  onSessionEnd?: (duration: number, messages: Message[]) => void; // oturum bittiğinde çağrılır
+  maxSessionDuration?: number;
+  onSessionEnd?: (duration: number, messages: Message[]) => void;
+  shouldRecord?: boolean;
+  onRecordingComplete?: (blob: Blob) => void;
 }
 
 interface UseRealtimeVoiceReturn {
-  // Connection
   connect: () => Promise<void>;
   disconnect: () => void;
   isConnected: boolean;
   isConnecting: boolean;
-
-  // State
   isUserSpeaking: boolean;
   isAISpeaking: boolean;
   messages: Message[];
   currentAction: ActionType;
-
-  // Session Duration
-  sessionDuration: number; // saniye cinsinden mevcut oturum süresi
+  sessionDuration: number;
   maxSessionDuration: number;
-
-  // Microphone
   isMuted: boolean;
   toggleMute: () => void;
-
-  // Error & Support
   error: string | null;
   clearError: () => void;
   isSupported: boolean;
+  isRecording: boolean;
 }
-
 
 type RealtimeEvent = {
   type: string;
@@ -60,29 +52,27 @@ type RealtimeEvent = {
   [key: string]: any;
 };
 
-// Check browser compatibility
 function checkBrowserSupport(): { supported: boolean; reason?: string } {
   if (typeof window === "undefined") {
     return { supported: false, reason: "Server-side rendering" };
   }
-
   if (typeof RTCPeerConnection === "undefined") {
     return { supported: false, reason: "Your browser doesn't support voice calls. Please use Chrome or Safari." };
   }
-
   if (!navigator?.mediaDevices?.getUserMedia) {
     return { supported: false, reason: "Your browser doesn't support microphone access. Please use Chrome or Safari." };
   }
-
   return { supported: true };
 }
 
-const MAX_SESSION_DURATION_DEFAULT = 300; // 5 dakika
+const MAX_SESSION_DURATION_DEFAULT = 300;
 
 export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseRealtimeVoiceReturn {
   const {
     maxSessionDuration = MAX_SESSION_DURATION_DEFAULT,
-    onSessionEnd
+    onSessionEnd,
+    shouldRecord = false,
+    onRecordingComplete,
   } = options;
 
   const [isConnected, setIsConnected] = useState(false);
@@ -95,8 +85,8 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
   const [isMuted, setIsMuted] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
   const [sessionDuration, setSessionDuration] = useState(0);
+  const [isRecording, setIsRecording] = useState(false);
 
-  // Check browser support on mount
   useEffect(() => {
     const support = checkBrowserSupport();
     setIsSupported(support.supported);
@@ -117,26 +107,28 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
   const pendingItemsRef = useRef<Map<string, PendingItem>>(new Map());
   const orderCounterRef = useRef(0);
 
+  // Recording refs
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const aiStreamRef = useRef<MediaStream | null>(null);
+  const pendingRecordingRef = useRef(false);
+  const shouldRecordRef = useRef(shouldRecord);
+  const onRecordingCompleteRef = useRef(onRecordingComplete);
+
   const clearError = useCallback(() => setError(null), []);
 
-  // Keep onSessionEnd ref updated
-  useEffect(() => {
-    onSessionEndRef.current = onSessionEnd;
-  }, [onSessionEnd]);
+  useEffect(() => { onSessionEndRef.current = onSessionEnd; }, [onSessionEnd]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { shouldRecordRef.current = shouldRecord; }, [shouldRecord]);
+  useEffect(() => { onRecordingCompleteRef.current = onRecordingComplete; }, [onRecordingComplete]);
 
-  // Keep messagesRef in sync with messages state
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-
-  // Session timer - her saniye güncelle
   useEffect(() => {
     if (isConnected && sessionStartTimeRef.current) {
       sessionTimerRef.current = setInterval(() => {
         const elapsed = Math.floor((Date.now() - sessionStartTimeRef.current!) / 1000);
         setSessionDuration(elapsed);
       }, 1000);
-
       return () => {
         if (sessionTimerRef.current) {
           clearInterval(sessionTimerRef.current);
@@ -146,7 +138,6 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
     }
   }, [isConnected]);
 
-  // Toggle microphone mute
   const toggleMute = useCallback(() => {
     if (mediaStreamRef.current) {
       const audioTrack = mediaStreamRef.current.getAudioTracks()[0];
@@ -157,9 +148,69 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
     }
   }, []);
 
-  // Cleanup function
+  // Starts merging user mic + AI stream into a single MediaRecorder
+  const startRecordingInternal = useCallback(() => {
+    try {
+      if (!mediaStreamRef.current || !aiStreamRef.current) {
+        console.warn("[Recording] Streams not ready, skipping");
+        return;
+      }
+
+      const audioCtx = new AudioContext();
+      audioContextRef.current = audioCtx;
+      const dest = audioCtx.createMediaStreamDestination();
+
+      const userSource = audioCtx.createMediaStreamSource(mediaStreamRef.current);
+      userSource.connect(dest);
+
+      const aiSource = audioCtx.createMediaStreamSource(aiStreamRef.current);
+      aiSource.connect(dest);
+
+      recordedChunksRef.current = [];
+
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "";
+
+      const recorder = new MediaRecorder(dest.stream, mimeType ? { mimeType } : undefined);
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(recordedChunksRef.current, { type: mimeType || "audio/webm" });
+        onRecordingCompleteRef.current?.(blob);
+        recordedChunksRef.current = [];
+        setIsRecording(false);
+      };
+
+      recorder.start(250);
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+      console.log("[Recording] Started");
+    } catch (err) {
+      console.error("[Recording] Failed to start:", err);
+    }
+  }, []);
+
   const cleanup = useCallback(() => {
-    // Session süresini hesapla ve callback'i çağır
+    // Stop recording and hand back the blob
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+      // onstop fires asynchronously, so state update happens there
+    }
+    mediaRecorderRef.current = null;
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    aiStreamRef.current = null;
+    pendingRecordingRef.current = false;
+
+    // Session duration callback
     if (sessionStartTimeRef.current) {
       const finalDuration = Math.floor((Date.now() - sessionStartTimeRef.current) / 1000);
       if (onSessionEndRef.current && finalDuration > 0) {
@@ -168,7 +219,6 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
       sessionStartTimeRef.current = null;
     }
 
-    // Session timer'ı temizle
     if (sessionTimerRef.current) {
       clearInterval(sessionTimerRef.current);
       sessionTimerRef.current = null;
@@ -199,22 +249,18 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
     setIsAISpeaking(false);
     setSessionDuration(0);
 
-    // Reset order tracking
     pendingItemsRef.current.clear();
     orderCounterRef.current = 0;
   }, []);
 
-  // Helper: Mesajları sıralı ekle
   const addMessageSorted = useCallback((newMsg: Message) => {
     setMessages((prev) => {
       const updated = [...prev, newMsg];
-      // Order'a göre sırala
       updated.sort((a, b) => a.order - b.order);
       return updated;
     });
   }, []);
 
-  // Handle incoming events from OpenAI
   const handleRealtimeEvent = useCallback((event: RealtimeEvent) => {
     console.log("[Realtime] Event:", event.type);
 
@@ -235,7 +281,6 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
         setIsAISpeaking(false);
         break;
 
-      // Yeni conversation item oluşturulduğunda - sırayı kaydet
       case "conversation.item.created": {
         const item = event.item;
         if (item && item.id) {
@@ -248,47 +293,28 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
       }
 
       case "conversation.item.input_audio_transcription.completed": {
-        // User's speech transcript
         if (event.transcript) {
           const itemId = event.item_id || Date.now().toString();
           const pending = pendingItemsRef.current.get(itemId);
           const order = pending?.order ?? orderCounterRef.current++;
-
-          addMessageSorted({
-            id: itemId,
-            text: event.transcript,
-            isUser: true,
-            order,
-          });
-
-          // Pending'den sil
+          addMessageSorted({ id: itemId, text: event.transcript, isUser: true, order });
           pendingItemsRef.current.delete(itemId);
         }
         break;
       }
 
       case "response.audio_transcript.done": {
-        // AI's response transcript
         if (event.transcript) {
           const itemId = event.item_id || Date.now().toString();
           const pending = pendingItemsRef.current.get(itemId);
           const order = pending?.order ?? orderCounterRef.current++;
-
-          addMessageSorted({
-            id: itemId,
-            text: event.transcript,
-            isUser: false,
-            order,
-          });
-
-          // Pending'den sil
+          addMessageSorted({ id: itemId, text: event.transcript, isUser: false, order });
           pendingItemsRef.current.delete(itemId);
         }
         break;
       }
 
       case "response.output_item.done":
-        // Function call completed
         if (event.item?.type === "function_call" && event.item?.name === "trigger_animation") {
           try {
             const args = JSON.parse(event.item.arguments || "{}");
@@ -297,12 +323,9 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
             if (animation) {
               console.log("[Realtime] Animation triggered:", animation);
 
-              if (actionTimeoutRef.current) {
-                clearTimeout(actionTimeoutRef.current);
-              }
+              if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
               setCurrentAction(animation);
 
-              // Clear action after animation duration
               const durations: Record<string, number> = {
                 "jump": 2000, "spin": 3000, "dance": 4000, "fly": 4000,
                 "wave": 3000, "clap": 3000, "bow": 2000, "nod": 2000,
@@ -310,27 +333,18 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
                 "high-five": 2000, "hug": 3000, "celebrating": 3000,
               };
               const duration = durations[animation] || 3000;
+              actionTimeoutRef.current = setTimeout(() => setCurrentAction(null), duration);
 
-              actionTimeoutRef.current = setTimeout(() => {
-                setCurrentAction(null);
-              }, duration);
-
-              // Send function result back and continue response
               if (dataChannelRef.current?.readyState === "open") {
-                // 1. Acknowledge the function call
                 dataChannelRef.current.send(JSON.stringify({
                   type: "conversation.item.create",
                   item: {
                     type: "function_call_output",
                     call_id: event.item.call_id,
-                    output: JSON.stringify({ success: true, animation })
-                  }
+                    output: JSON.stringify({ success: true, animation }),
+                  },
                 }));
-
-                // 2. Tell AI to continue speaking
-                dataChannelRef.current.send(JSON.stringify({
-                  type: "response.create"
-                }));
+                dataChannelRef.current.send(JSON.stringify({ type: "response.create" }));
               }
             }
           } catch (err) {
@@ -344,13 +358,11 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
         setError(event.error?.message || "Connection error");
         break;
     }
-  }, []);
+  }, [addMessageSorted]);
 
-  // Connect to OpenAI Realtime API
   const connect = useCallback(async () => {
     if (isConnected || isConnecting) return;
 
-    // Check browser support before connecting
     const support = checkBrowserSupport();
     if (!support.supported) {
       setError(support.reason || "Browser not supported");
@@ -361,56 +373,45 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
     setError(null);
 
     try {
-      // 1. Get ephemeral key from our server
       console.log("[Realtime] Getting session token...");
-      const sessionResponse = await fetch("/api/realtime/session", {
-        method: "POST",
-      });
-
-      if (!sessionResponse.ok) {
-        throw new Error("Failed to get session token");
-      }
+      const sessionResponse = await fetch("/api/realtime/session", { method: "POST" });
+      if (!sessionResponse.ok) throw new Error("Failed to get session token");
 
       const sessionData = await sessionResponse.json();
       const ephemeralKey = sessionData.client_secret?.value;
-
-      if (!ephemeralKey) {
-        throw new Error("No ephemeral key received");
-      }
+      if (!ephemeralKey) throw new Error("No ephemeral key received");
 
       console.log("[Realtime] Got ephemeral key");
 
-      // 2. Get microphone access
       console.log("[Realtime] Requesting microphone...");
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       mediaStreamRef.current = mediaStream;
       console.log("[Realtime] Microphone access granted");
 
-      // 3. Create WebRTC peer connection
       const pc = new RTCPeerConnection();
       peerConnectionRef.current = pc;
 
-      // 4. Handle incoming audio from AI
       pc.ontrack = (event) => {
         console.log("[Realtime] Received audio track");
         const audio = new Audio();
         audio.autoplay = true;
         audio.srcObject = event.streams[0];
         audioElementRef.current = audio;
+
+        // Save AI stream for recording
+        aiStreamRef.current = event.streams[0];
+
+        // If onopen already fired and was waiting for the AI stream, start now
+        if (pendingRecordingRef.current) {
+          pendingRecordingRef.current = false;
+          startRecordingInternal();
+        }
       };
 
-      // 5. Add microphone track
-      mediaStream.getTracks().forEach((track) => {
-        pc.addTrack(track, mediaStream);
-      });
+      mediaStream.getTracks().forEach((track) => pc.addTrack(track, mediaStream));
 
-      // 6. Create data channel for events
       const dataChannel = pc.createDataChannel("oai-events");
       dataChannelRef.current = dataChannel;
 
@@ -421,15 +422,23 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
         sessionStartTimeRef.current = Date.now();
         setSessionDuration(0);
 
-        // Send initial greeting request
-        const greetingEvent = {
+        // Start recording if requested
+        if (shouldRecordRef.current) {
+          if (aiStreamRef.current) {
+            startRecordingInternal();
+          } else {
+            // AI track hasn't arrived yet — ontrack will start recording when it does
+            pendingRecordingRef.current = true;
+          }
+        }
+
+        dataChannel.send(JSON.stringify({
           type: "response.create",
           response: {
             modalities: ["audio", "text"],
             instructions: "Greet the user warmly and introduce yourself as Kai. Keep it very short, just 1 sentence.",
           },
-        };
-        dataChannel.send(JSON.stringify(greetingEvent));
+        }));
       };
 
       dataChannel.onmessage = (e) => {
@@ -451,11 +460,9 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
         cleanup();
       };
 
-      // 7. Create and set local SDP offer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // 8. Send offer to OpenAI and get answer
       console.log("[Realtime] Connecting to OpenAI...");
       const sdpResponse = await fetch(
         "https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview",
@@ -469,17 +476,10 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
         }
       );
 
-      if (!sdpResponse.ok) {
-        throw new Error("Failed to establish WebRTC connection");
-      }
+      if (!sdpResponse.ok) throw new Error("Failed to establish WebRTC connection");
 
       const answerSdp = await sdpResponse.text();
-
-      // 9. Set remote description
-      await pc.setRemoteDescription({
-        type: "answer",
-        sdp: answerSdp,
-      });
+      await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
 
       console.log("[Realtime] WebRTC connection established");
     } catch (err) {
@@ -488,21 +488,17 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
       cleanup();
       setIsConnecting(false);
     }
-  }, [isConnected, isConnecting, handleRealtimeEvent, cleanup]);
+  }, [isConnected, isConnecting, handleRealtimeEvent, cleanup, startRecordingInternal]);
 
-  // Disconnect
   const disconnect = useCallback(() => {
     console.log("[Realtime] Disconnecting...");
     cleanup();
   }, [cleanup]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       cleanup();
-      if (actionTimeoutRef.current) {
-        clearTimeout(actionTimeoutRef.current);
-      }
+      if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
     };
   }, [cleanup]);
 
@@ -522,5 +518,6 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
     error,
     clearError,
     isSupported,
+    isRecording,
   };
 }

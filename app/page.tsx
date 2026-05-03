@@ -23,6 +23,7 @@ export default function Home() {
   const [dailyLimitReached, setDailyLimitReached] = useState(false);
   const [studentInfo, setStudentInfo] = useState<StudentInfo | null>(null);
   const [showRegistration, setShowRegistration] = useState(false);
+  const [shouldRecord, setShouldRecord] = useState(false);
 
   // Load student info from sessionStorage on mount
   useEffect(() => {
@@ -37,6 +38,21 @@ export default function Home() {
       }
     };
     loadStudentInfo();
+  }, []);
+
+  const handleRecordingComplete = useCallback((blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const timeStr = `${pad(now.getHours())}-${pad(now.getMinutes())}`;
+    a.download = `kai-${dateStr}-${timeStr}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }, []);
 
   // Session bittiğinde kullanımı kaydet ve veritabanına gönder
@@ -85,9 +101,12 @@ export default function Home() {
     error,
     clearError,
     isSupported,
+    isRecording,
   } = useRealtimeVoice({
     maxSessionDuration: MAX_SESSION_SECONDS,
     onSessionEnd: handleSessionEnd,
+    shouldRecord,
+    onRecordingComplete: handleRecordingComplete,
   });
 
   // Sayfa yüklendiğinde günlük kullanımı kontrol et
@@ -294,8 +313,43 @@ export default function Home() {
 
         {/* Daily Usage Info - when not connected */}
         {!isConnected && !dailyLimitReached && isSupported && (
-          <div className="text-sm text-gray-500 mb-4">
-            Bugün kalan: <span className="font-medium text-purple-600">{formatDuration(remainingDaily)}</span>
+          <div className="flex flex-col items-center gap-2 mb-4">
+            <div className="text-sm text-gray-500">
+              Bugün kalan: <span className="font-medium text-purple-600">{formatDuration(remainingDaily)}</span>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <div
+                onClick={() => setShouldRecord((v) => !v)}
+                className={`w-5 h-5 rounded flex items-center justify-center border-2 transition-colors ${
+                  shouldRecord
+                    ? "bg-red-500 border-red-500"
+                    : "bg-white border-gray-300 hover:border-red-400"
+                }`}
+              >
+                {shouldRecord && (
+                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </div>
+              <span
+                onClick={() => setShouldRecord((v) => !v)}
+                className="text-sm text-gray-500"
+              >
+                Konuşmayı kaydet
+              </span>
+              {shouldRecord && (
+                <span className="text-xs text-red-400 font-medium">(.webm olarak inecek)</span>
+              )}
+            </label>
+          </div>
+        )}
+
+        {/* Recording indicator - when connected and recording */}
+        {isConnected && isRecording && (
+          <div className="flex items-center gap-1.5 mb-2 text-xs text-red-500 font-medium">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            Kayıt ediliyor
           </div>
         )}
 
