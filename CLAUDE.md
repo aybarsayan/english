@@ -80,3 +80,5 @@ Kai is configured to:
 ## Environment Variables
 
 Required: `OPENAI_API_KEY`
+
+Hidden route: `/UDFBbksN` opens the voice page without time limits (key is hardcoded in `app/[key]/page.tsx`)
