@@ -18,7 +18,101 @@ interface PendingItem {
 type ActionType =
   | "jump" | "dance" | "wave" | "clap" | "spin" | "bow"
   | "nod" | "shake-head" | "laugh" | "wink" | "high-five"
-  | "hug" | "celebrating" | "fly" | "sleep" | "cry" | "yawn" | null;
+  | "hug" | "celebrating" | "fly" | "sleep" | "cry" | "yawn"
+  | "sit" | "run" | "stretch" | "eat" | null;
+
+const ACTION_DURATIONS: Record<string, number> = {
+  "jump": 2000, "spin": 3000, "dance": 4000, "fly": 4000,
+  "wave": 3000, "clap": 3000, "bow": 2000, "nod": 2000,
+  "shake-head": 2000, "laugh": 3000, "wink": 2000,
+  "high-five": 2000, "hug": 3000, "celebrating": 3000,
+  "sit": 3000, "run": 3000, "stretch": 3000, "sleep": 4000,
+  "yawn": 2000, "cry": 2000, "eat": 3000,
+};
+
+// Fallback for when the model says it is doing a movement ("I'm waving!") but
+// forgets to call trigger_animation. Only first-person phrases count, so
+// "Do you like to dance?" does not make Kai dance.
+const SPOKEN_ACTION_PATTERNS: [RegExp, Exclude<ActionType, null>][] = [
+  [/high[\s-]?fives?/, "high-five"],
+  [/\bwav(e|es|ing)\b/, "wave"],
+  [/\bjump(s|ing)?\b/, "jump"],
+  [/\bdanc(e|es|ing)\b/, "dance"],
+  [/\bclap(s|ping)?\b/, "clap"],
+  [/\bspin(s|ning)?\b|\bturn(ing)? around\b/, "spin"],
+  [/\bbow(s|ing)?\b/, "bow"],
+  [/\bfly(ing)?\b/, "fly"],
+  [/\bsit(ting)?( down)?\b/, "sit"],
+  [/\brun(s|ning)?\b/, "run"],
+  [/\bstretch(es|ing)?\b/, "stretch"],
+  [/\bhug(s|ging)?\b/, "hug"],
+  [/\bwink(s|ing)?\b/, "wink"],
+  [/\bcelebrat(e|es|ing)\b/, "celebrating"],
+];
+const FIRST_PERSON = /\b(i am|i'm|i will|i'll|let me|watch me|look at me|here i go|i can)\b([^.!?]{0,25})/gi;
+
+function matchAction(text: string): ActionType {
+  for (const [pattern, action] of SPOKEN_ACTION_PATTERNS) {
+    if (pattern.test(text)) return action;
+  }
+  return null;
+}
+
+function detectSpokenAction(transcript: string): ActionType {
+  for (const match of transcript.matchAll(FIRST_PERSON)) {
+    const action = matchAction(match[2].toLowerCase());
+    if (action) return action;
+  }
+  // "High five!" on its own is always an action, not a topic
+  if (/(^|[.!?]\s*)high[\s-]?five\b/i.test(transcript)) return "high-five";
+  return null;
+}
+
+// The child's own command ("Kai, jump!", "Can you dance?", "zıpla!") plays the
+// animation immediately, without waiting for the model.
+const COMMAND_PREFIX = /^(kai|please|can you|could you|will you|let's|lets|let us|show me|give me|now|ok|okay|and|you)\b[\s,]*/;
+const TURKISH_COMMANDS: [RegExp, Exclude<ActionType, null>][] = [
+  [/zıpla/, "jump"],
+  [/dans (et|eder)/, "dance"],
+  [/el salla/, "wave"],
+  [/alkış/, "clap"],
+  [/(etrafında )?dön(sene|er misin)?$/, "spin"],
+  [/eğil/, "bow"],
+  [/(^|\s)otur/, "sit"],
+  [/(^|\s)koş/, "run"],
+  [/(^|\s)uç(sana|ar mısın)?$/, "fly"],
+  [/(^|\s)uyu/, "sleep"],
+  [/sarıl/, "hug"],
+  [/göz kırp/, "wink"],
+  [/beşlik|çak bir/, "high-five"],
+];
+
+function detectChildCommand(transcript: string): ActionType {
+  const text = transcript.toLowerCase().trim();
+
+  for (const segment of text.split(/[.!?,]+/)) {
+    let s = segment.trim();
+    let prev;
+    do {
+      prev = s;
+      s = s.replace(COMMAND_PREFIX, "");
+    } while (s !== prev);
+    // English imperative: the sentence (after "Kai,", "can you", "please"...) starts with the verb
+    const firstWords = s.split(/\s+/).slice(0, 3).join(" ");
+    if (/^(a\s+)?(high[\s-]?five|wave|jump|dance|clap|spin|turn around|bow|fly|sit|run|stretch|hug|wink|celebrate)\b/.test(firstWords)) {
+      const action = matchAction(firstWords);
+      if (action) return action;
+    }
+  }
+
+  // Turkish commands are verb-final ("Kai zıpla", "dans et"), so only short phrases count
+  if (text.split(/\s+/).length <= 6) {
+    for (const [pattern, action] of TURKISH_COMMANDS) {
+      if (pattern.test(text)) return action;
+    }
+  }
+  return null;
+}
 
 interface UseRealtimeVoiceOptions {
   maxSessionDuration?: number;
@@ -261,6 +355,14 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
     });
   }, []);
 
+  const playAction = useCallback((animation: ActionType) => {
+    if (!animation) return;
+    if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
+    setCurrentAction(animation);
+    const duration = ACTION_DURATIONS[animation] || 3000;
+    actionTimeoutRef.current = setTimeout(() => setCurrentAction(null), duration);
+  }, []);
+
   const handleRealtimeEvent = useCallback((event: RealtimeEvent) => {
     console.log("[Realtime] Event:", event.type);
 
@@ -273,17 +375,20 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
         setIsUserSpeaking(false);
         break;
 
-      case "response.audio.started":
+      // WebRTC playback events (the old "response.audio.started" never existed)
+      case "output_audio_buffer.started":
         setIsAISpeaking(true);
         break;
 
-      case "response.audio.done":
+      case "output_audio_buffer.stopped":
+      case "output_audio_buffer.cleared":
         setIsAISpeaking(false);
         break;
 
+      case "conversation.item.added":
       case "conversation.item.created": {
         const item = event.item;
-        if (item && item.id) {
+        if (item && item.id && !pendingItemsRef.current.has(item.id)) {
           const isUser = item.role === "user";
           const order = orderCounterRef.current++;
           pendingItemsRef.current.set(item.id, { id: item.id, isUser, order });
@@ -299,11 +404,17 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
           const order = pending?.order ?? orderCounterRef.current++;
           addMessageSorted({ id: itemId, text: event.transcript, isUser: true, order });
           pendingItemsRef.current.delete(itemId);
+
+          const command = detectChildCommand(event.transcript);
+          if (command) {
+            console.log("[Realtime] Animation from child's command:", command);
+            playAction(command);
+          }
         }
         break;
       }
 
-      case "response.audio_transcript.done": {
+      case "response.output_audio_transcript.done": {
         if (event.transcript) {
           const itemId = event.item_id || Date.now().toString();
           const pending = pendingItemsRef.current.get(itemId);
@@ -314,51 +425,66 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
         break;
       }
 
+      // Play the animation as soon as the tool call is complete
       case "response.output_item.done":
         if (event.item?.type === "function_call" && event.item?.name === "trigger_animation") {
           try {
             const args = JSON.parse(event.item.arguments || "{}");
-            const animation = args.animation as ActionType;
-
-            if (animation) {
-              console.log("[Realtime] Animation triggered:", animation);
-
-              if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
-              setCurrentAction(animation);
-
-              const durations: Record<string, number> = {
-                "jump": 2000, "spin": 3000, "dance": 4000, "fly": 4000,
-                "wave": 3000, "clap": 3000, "bow": 2000, "nod": 2000,
-                "shake-head": 2000, "laugh": 3000, "wink": 2000,
-                "high-five": 2000, "hug": 3000, "celebrating": 3000,
-              };
-              const duration = durations[animation] || 3000;
-              actionTimeoutRef.current = setTimeout(() => setCurrentAction(null), duration);
-
-              if (dataChannelRef.current?.readyState === "open") {
-                dataChannelRef.current.send(JSON.stringify({
-                  type: "conversation.item.create",
-                  item: {
-                    type: "function_call_output",
-                    call_id: event.item.call_id,
-                    output: JSON.stringify({ success: true, animation }),
-                  },
-                }));
-                dataChannelRef.current.send(JSON.stringify({ type: "response.create" }));
-              }
-            }
+            console.log("[Realtime] Animation triggered:", args.animation);
+            playAction(args.animation as ActionType);
           } catch (err) {
             console.error("[Realtime] Failed to parse function call:", err);
           }
         }
         break;
 
+      // Once the whole response is finished, answer tool calls and apply the fallback
+      case "response.done": {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const output: any[] = event.response?.output || [];
+        const calls = output.filter((o) => o.type === "function_call" && o.name === "trigger_animation");
+        const spoke = output.some((o) => o.type === "message");
+
+        if (calls.length > 0) {
+          const dc = dataChannelRef.current;
+          if (dc?.readyState === "open") {
+            for (const call of calls) {
+              dc.send(JSON.stringify({
+                type: "conversation.item.create",
+                item: {
+                  type: "function_call_output",
+                  call_id: call.call_id,
+                  output: JSON.stringify({ success: true }),
+                },
+              }));
+            }
+            // Only ask for a follow-up if Kai has not spoken yet in this response,
+            // otherwise Kai would talk twice.
+            if (!spoke) {
+              dc.send(JSON.stringify({ type: "response.create" }));
+            }
+          }
+        } else if (spoke) {
+          const transcript = output
+            .filter((o) => o.type === "message")
+            .flatMap((o) => o.content || [])
+            .map((c: { transcript?: string; text?: string }) => c.transcript || c.text || "")
+            .join(" ");
+          const spokenAction = detectSpokenAction(transcript);
+          if (spokenAction) {
+            console.log("[Realtime] Fallback animation from speech:", spokenAction);
+            playAction(spokenAction);
+          }
+        }
+        break;
+      }
+
       case "error":
         console.error("[Realtime] Error:", event.error);
         setError(event.error?.message || "Connection error");
         break;
     }
-  }, [addMessageSorted]);
+  }, [addMessageSorted, playAction]);
 
   const connect = useCallback(async () => {
     if (isConnected || isConnecting) return;
@@ -432,11 +558,13 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
           }
         }
 
+        playAction("wave");
+
         dataChannel.send(JSON.stringify({
           type: "response.create",
           response: {
-            modalities: ["audio", "text"],
-            instructions: "Greet the user warmly and introduce yourself as Kai. Keep it very short, just 1 sentence.",
+            output_modalities: ["audio"],
+            instructions: "Greet the child warmly and introduce yourself as Kai. Keep it very short, just 1 sentence.",
           },
         }));
       };
@@ -465,7 +593,7 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
 
       console.log("[Realtime] Connecting to OpenAI...");
       const sdpResponse = await fetch(
-        "https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview",
+        "https://api.openai.com/v1/realtime/calls",
         {
           method: "POST",
           headers: {
@@ -488,7 +616,7 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
       cleanup();
       setIsConnecting(false);
     }
-  }, [isConnected, isConnecting, handleRealtimeEvent, cleanup, startRecordingInternal]);
+  }, [isConnected, isConnecting, handleRealtimeEvent, cleanup, startRecordingInternal, playAction]);
 
   const disconnect = useCallback(() => {
     console.log("[Realtime] Disconnecting...");
